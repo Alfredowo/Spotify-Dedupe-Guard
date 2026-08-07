@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+data/config.json
+data/spotify_token.bin
+data/oauth_pending.json
+data/*.sqlite3
+data/*.sqlite3-*

@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Spotify Dedupe Guard</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="ambient" aria-hidden="true"></div>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Dedupe Guard, inicio">
+      <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+      <span><b>DEDUPE</b><em>GUARD</em></span>
+    </a>
+    <div id="account-pill" class="account-pill" hidden></div>
+  </header>
+
+  <main>
+    <section id="setup" class="setup" hidden>
+      <div class="setup-copy">
+        <p class="eyebrow">Una sola biblioteca. Una sola copia.</p>
+        <h1>Encuentra el eco<br>antes de borrar.</h1>
+        <p>Compara ISRC, artista, duración y edición. La aplicación separa los duplicados seguros de las versiones que merecen una decisión humana.</p>
+        <div class="safety-note"><span>◉</span> Nada se elimina durante el análisis.</div>
+      </div>
+
+      <div class="setup-panel">
+        <div id="config-step">
+          <span class="step-label">Configuración · 01</span>
+          <h2>Conecta tu aplicación de Spotify</h2>
+          <ol class="instructions">
+            <li>Crea una app en <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noreferrer">Spotify Developer Dashboard</a>.</li>
+            <li>Registra exactamente esta Redirect URI:</li>
+          </ol>
+          <button id="copy-redirect" class="copy-field" type="button"><code id="redirect-uri"></code><span>Copiar</span></button>
+          <form id="config-form">
+            <label for="client-id">Client ID</label>
+            <div class="input-row">
+              <input id="client-id" name="client_id" autocomplete="off" placeholder="Pega aquí el Client ID" required>
+              <button class="button primary" type="submit">Guardar</button>
+            </div>
+          </form>
+          <p class="microcopy">No se solicita ni almacena un Client Secret.</p>
+        </div>
+
+        <div id="auth-step" hidden>
+          <span class="step-label">Autorización · 02</span>
+          <h2>Autoriza tu biblioteca</h2>
+          <p>Spotify mostrará los permisos para leer y modificar “Tus me gusta” y crear la playlist de respaldo.</p>
+          <a class="button spotify" href="/auth/login"><span aria-hidden="true">●</span> Conectar con Spotify</a>
+          <button id="change-client" class="text-button" type="button">Cambiar Client ID</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="dashboard" class="dashboard" hidden>
+      <div class="dashboard-head">
+        <div>
+          <p class="eyebrow">Auditoría de Tus me gusta</p>
+          <h1>Tu biblioteca,<br><span>sin dobles.</span></h1>
+        </div>
+        <div class="scan-control">
+          <p id="last-scan">Todavía no hay una auditoría.</p>
+          <button id="scan-button" class="button scan" type="button"><span class="scan-disc" aria-hidden="true"></span> Analizar biblioteca</button>
+        </div>
+      </div>
+
+      <section id="empty-state" class="empty-state">
+        <div class="empty-groove" aria-hidden="true"><i></i><i></i><i></i></div>
+        <h2>La primera pasada es solo lectura</h2>
+        <p>Reuniremos todas las canciones guardadas y construiremos grupos comparables. Ningún like cambiará hasta que confirmes una limpieza.</p>
+      </section>
+
+      <div id="results" hidden>
+        <section class="summary-strip" aria-label="Resumen de auditoría">
+          <div><strong id="total-tracks">0</strong><span>canciones revisadas</span></div>
+          <div><strong id="safe-count">0</strong><span>duplicados seguros</span></div>
+          <div><strong id="review-count">0</strong><span>para revisar</span></div>
+          <div class="selection-stat"><strong id="selected-count">0</strong><span>seleccionadas</span></div>
+        </section>
+
+        <div class="workbench">
+          <aside class="filters" aria-label="Filtros de resultados">
+            <p class="utility-label">Mostrar</p>
+            <button class="filter active" data-filter="all" type="button"><span>Todos</span><b id="filter-all">0</b></button>
+            <button class="filter" data-filter="safe" type="button"><span>Seguros</span><b id="filter-safe">0</b></button>
+            <button class="filter" data-filter="probable" type="button"><span>Probables</span><b id="filter-probable">0</b></button>
+            <button class="filter" data-filter="version" type="button"><span>Versiones</span><b id="filter-version">0</b></button>
+            <div class="legend">
+              <p><i class="dot safe"></i> ISRC confirmado</p>
+              <p><i class="dot probable"></i> Metadatos cercanos</p>
+              <p><i class="dot version"></i> Edición diferente</p>
+            </div>
+          </aside>
+
+          <div class="groups-column">
+            <div class="list-toolbar">
+              <div>
+                <span id="visible-label">Todos los grupos</span>
+                <small id="group-count">0 coincidencias</small>
+              </div>
+              <button id="select-safe" class="text-button" type="button">Seleccionar solo seguros</button>
+            </div>
+            <div id="groups" class="groups"></div>
+          </div>
+        </div>
+
+        <section class="action-dock" aria-label="Acciones de limpieza">
+          <div class="backup-lock">
+            <span class="lock" aria-hidden="true">◆</span>
+            <div><b>Respaldo obligatorio</b><small>Se creará una playlist privada antes de retirar canciones.</small></div>
+          </div>
+          <button id="remove-button" class="button danger" type="button" disabled>Retirar <span>0</span> duplicados</button>
+        </section>
+      </div>
+
+      <section id="history-section" class="history-section" hidden>
+        <div class="section-heading"><p class="utility-label">Registro</p><h2>Historial de limpieza</h2></div>
+        <div id="history" class="history"></div>
+      </section>
+    </section>
+  </main>
+
+  <dialog id="confirm-dialog" class="confirm-dialog">
+    <form method="dialog">
+      <button class="dialog-close" value="cancel" aria-label="Cerrar">×</button>
+      <span class="step-label">Confirmación final</span>
+      <h2>Retirar <span id="confirm-count">0</span> canciones</h2>
+      <p>Primero se guardarán en una playlist privada de respaldo. Después desaparecerán de “Tus me gusta”.</p>
+      <label class="confirm-check"><input id="confirm-checkbox" type="checkbox"> Entiendo que esta acción modifica mi biblioteca.</label>
+      <div class="dialog-actions">
+        <button class="button ghost" value="cancel">Cancelar</button>
+        <button id="confirm-remove" class="button danger" value="default" type="button" disabled>Crear respaldo y retirar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="/app.js" defer></script>
+</body>
+</html>
