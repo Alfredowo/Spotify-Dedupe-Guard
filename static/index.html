@@ -97,18 +97,21 @@
           </aside>
 
           <div class="groups-column">
-            <div class="list-toolbar">
-              <div>
-                <span id="visible-label">Todos los grupos</span>
-                <small id="group-count">0 coincidencias</small>
+            <div id="groups-toolbar-sentinel" class="groups-toolbar-sentinel" aria-hidden="true"></div>
+            <div id="groups-toolbar" class="groups-toolbar">
+              <div class="list-toolbar">
+                <div>
+                  <span id="visible-label">Todos los grupos</span>
+                  <small id="group-count">0 coincidencias</small>
+                </div>
+                <div class="selection-tools" aria-label="Categorías seleccionadas">
+                  <label class="selection-option safe" for="select-safe"><input id="select-safe" data-selection-kind="safe" type="checkbox"> <span>Seguros</span></label>
+                  <label class="selection-option probable" for="select-probable"><input id="select-probable" data-selection-kind="probable" type="checkbox"> <span>Probables</span></label>
+                  <label class="selection-option version" for="select-version"><input id="select-version" data-selection-kind="version" type="checkbox"> <span>Versiones</span></label>
+                </div>
               </div>
-              <div class="selection-tools" aria-label="Categorías seleccionadas">
-                <label class="selection-option safe" for="select-safe"><input id="select-safe" data-selection-kind="safe" type="checkbox"> <span>Seguros</span></label>
-                <label class="selection-option probable" for="select-probable"><input id="select-probable" data-selection-kind="probable" type="checkbox"> <span>Probables</span></label>
-                <label class="selection-option version" for="select-version"><input id="select-version" data-selection-kind="version" type="checkbox"> <span>Versiones</span></label>
-              </div>
+              <p class="control-hint"><span>○ Elige cuál conservar</span><span>□ Marca cuáles retirar</span></p>
             </div>
-            <p class="control-hint"><span>○ Elige cuál conservar</span><span>□ Marca cuáles retirar</span></p>
             <div id="groups" class="groups"></div>
           </div>
         </div>

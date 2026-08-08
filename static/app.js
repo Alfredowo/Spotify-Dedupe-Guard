@@ -241,6 +241,34 @@ function renderSelection() {
   });
 }
 
+function setupGroupsToolbar() {
+  const toolbar = $("#groups-toolbar");
+  const sentinel = $("#groups-toolbar-sentinel");
+  const topbar = $(".topbar");
+  if (!toolbar || !sentinel || !topbar) return;
+
+  let observer;
+  let observedOffset = -1;
+  const connectObserver = () => {
+    const offset = Math.round(topbar.getBoundingClientRect().height);
+    if (offset === observedOffset) return;
+    observedOffset = offset;
+    observer?.disconnect();
+    observer = new IntersectionObserver(([entry]) => {
+      const stuck = !entry.isIntersecting && entry.boundingClientRect.top <= offset;
+      toolbar.classList.toggle("is-stuck", stuck);
+    }, {rootMargin: `-${offset}px 0px 0px 0px`, threshold: 0});
+    observer.observe(sentinel);
+  };
+
+  connectObserver();
+  if ("ResizeObserver" in window) {
+    new ResizeObserver(connectObserver).observe(topbar);
+  } else {
+    window.addEventListener("resize", connectObserver);
+  }
+}
+
 function renderHistory() {
   const section = $("#history-section");
   if (!state.history.length) {
@@ -391,4 +419,4 @@ $("#confirm-checkbox").addEventListener("change", event => {
 });
 $("#confirm-remove").addEventListener("click", removeSelected);
 
-boot();
+boot().finally(setupGroupsToolbar);

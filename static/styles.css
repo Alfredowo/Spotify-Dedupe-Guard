@@ -251,7 +251,23 @@ input:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(91,212,232,.
 .dot { width: 7px; height: 7px; display: inline-block; margin-right: 8px; border-radius: 50%; }
 .dot.safe { background: var(--safe); }.dot.probable { background: var(--amber); }.dot.version { background: var(--violet); }
 
-.list-toolbar { min-height: 48px; display: flex; justify-content: space-between; align-items: start; gap: 24px; border-bottom: 1px solid var(--line); }
+.groups-toolbar-sentinel { height: 1px; margin-bottom: -1px; pointer-events: none; }
+.groups-toolbar {
+  position: sticky;
+  top: 78px;
+  z-index: 7;
+  padding-top: 12px;
+  background: transparent;
+  border-bottom: 1px solid var(--line);
+  transition: background .18s ease, box-shadow .18s ease;
+}
+.groups-toolbar.is-stuck {
+  background: rgba(9,13,25,.74);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 12px 24px rgba(3,6,12,.22);
+}
+.list-toolbar { min-height: 48px; display: flex; justify-content: space-between; align-items: start; gap: 24px; }
 .list-toolbar > div:first-child > span { font-family: var(--display); font-size: 20px; }
 .list-toolbar small { display: block; color: var(--muted); }
 .selection-tools { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px 14px; }
@@ -289,7 +305,7 @@ input:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(91,212,232,.
 .selection-option.probable:hover input { box-shadow: 0 0 0 1px rgba(241,198,106,.35); }
 .selection-option.version:hover input { box-shadow: 0 0 0 1px rgba(169,150,255,.35); }
 .selection-option:has(input:disabled) { opacity: .35; cursor: not-allowed; }
-.control-hint { margin: 12px 0 0; display: flex; justify-content: flex-end; gap: 22px; color: var(--muted); font-family: var(--mono); font-size: 9px; text-transform: uppercase; letter-spacing: .06em; }
+.control-hint { margin: 6px 0 0; padding-bottom: 10px; display: flex; justify-content: flex-end; gap: 22px; color: var(--muted); font-family: var(--mono); font-size: 9px; text-transform: uppercase; letter-spacing: .06em; }
 .groups { display: grid; gap: 18px; padding-top: 18px; }
 
 .group-card { background: rgba(21,29,48,.78); border: 1px solid var(--line); }
@@ -393,6 +409,7 @@ input:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(91,212,232,.
 
 @media (max-width: 560px) {
   .topbar { height: 66px; padding-inline: 18px; }
+  .groups-toolbar { top: 66px; }
   main { padding-inline: 18px; }
   .setup { min-height: calc(100vh - 66px); padding: 45px 0; }
   .setup-copy h1, .dashboard-head h1 { font-size: 52px; }
