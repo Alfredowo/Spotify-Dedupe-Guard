@@ -428,11 +428,18 @@ input:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(91,212,232,.
 .no-backup-warning span { margin-top: 4px; color: var(--text); font-size: 12px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 10px; }
 
-.toast { position: fixed; right: 24px; bottom: 24px; max-width: 400px; padding: 14px 18px; color: var(--text); background: var(--panel-2); border: 1px solid var(--cyan); transform: translateY(20px); opacity: 0; pointer-events: none; z-index: 20; transition: .22s ease; }
+.toast { --toast-accent: var(--cyan); position: fixed; right: 24px; bottom: 24px; display: flex; align-items: center; gap: 10px; max-width: 480px; padding: 14px 18px; color: var(--text); background: var(--panel-2); border: 1px solid var(--toast-accent); transform: translateY(20px); opacity: 0; pointer-events: none; z-index: 20; transition: .22s ease; }
 .toast.show { transform: translateY(0); opacity: 1; }
-.toast.error { border-color: var(--coral); }
+.toast.error { --toast-accent: var(--coral); }
+.toast.show::before { width: 16px; height: 16px; flex: 0 0 auto; content: ""; background: conic-gradient(from -90deg, var(--toast-accent) var(--toast-progress), rgba(237,241,248,.14) 0); border-radius: 50%; -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 0); mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 0); animation: toast-countdown var(--toast-duration, 4200ms) linear 1 forwards; }
 
 @keyframes spin { to { transform: rotate(360deg); } }
+@property --toast-progress { syntax: "<angle>"; inherits: false; initial-value: 360deg; }
+@keyframes toast-countdown { to { --toast-progress: 0deg; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .toast.show::before { animation-timing-function: steps(4, end); }
+}
 
 @media (max-width: 920px) {
   .setup { grid-template-columns: 1fr; }

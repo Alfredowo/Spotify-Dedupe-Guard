@@ -54,8 +54,14 @@ class ScanJob:
     def _run(self) -> None:
         try:
             items = spotify_client().saved_tracks()
+            print(f"Spotify devolvió {len(items)} canciones guardadas.", flush=True)
             result = detect_duplicates(items)
             scan_id = store_scan(result)
+            total_groups = result.get("summary", {}).get("total_groups", "desconocidos")
+            print(
+                f"Auditoría {scan_id} completada: {total_groups} grupos.",
+                flush=True,
+            )
             state = {
                 "status": "completed",
                 "started_at": self.status().get("started_at"),
@@ -63,6 +69,7 @@ class ScanJob:
                 "scan_id": scan_id,
             }
         except Exception as error:
+            print(f"El análisis falló: {error!r}", flush=True)
             state = {
                 "status": "failed",
                 "started_at": self.status().get("started_at"),

@@ -10,6 +10,7 @@ const state = {
 
 let scanPollPromise = null;
 let profileRefreshPromise = null;
+const TOAST_DURATION_MS = 4200;
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -39,9 +40,12 @@ async function api(path, options = {}) {
 function toast(message, error = false) {
   const element = $("#toast");
   element.textContent = message;
+  element.style.setProperty("--toast-duration", `${TOAST_DURATION_MS}ms`);
+  element.className = "toast";
+  void element.offsetWidth;
   element.className = `toast show${error ? " error" : ""}`;
   clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => element.className = "toast", 4200);
+  toast.timer = setTimeout(() => element.className = "toast", TOAST_DURATION_MS);
 }
 
 function setBusy(button, busy, busyText = "Procesando…") {
@@ -398,7 +402,10 @@ async function pollScan(job, announceResume) {
     renderScan();
     toast(`Auditoría completa: ${state.scan.summary.total_groups} grupos encontrados.`);
   } catch (error) {
-    toast(error.message, true);
+    const message = /too many requests|\b429\b/i.test(error.message)
+      ? "Spotify limitó temporalmente las solicitudes. El análisis no se completó y los resultados visibles son anteriores. Espera unos minutos antes de intentarlo de nuevo."
+      : error.message;
+    toast(message, true);
   } finally {
     setBusy(button, false);
   }

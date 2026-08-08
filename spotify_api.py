@@ -193,6 +193,11 @@ class SpotifyClient:
                         retry_after = int(error.headers.get("Retry-After", "1"))
                     except (TypeError, ValueError):
                         retry_after = 1
+                    print(
+                        f"Spotify respondió 429; reintentando en {max(1, min(retry_after, 60))} s "
+                        f"(intento {attempt + 1}/6).",
+                        flush=True,
+                    )
                     time.sleep(max(1, min(retry_after, 60)))
                     continue
 
