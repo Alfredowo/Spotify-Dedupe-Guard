@@ -89,11 +89,13 @@ function renderStatus() {
   const dashboard = $("#dashboard");
   const configStep = $("#config-step");
   const authStep = $("#auth-step");
+  const accountControls = $("#account-controls");
   $("#redirect-uri").textContent = state.status.redirect_uri;
 
   if (!state.status.authenticated) {
     setup.hidden = false;
     dashboard.hidden = true;
+    accountControls.hidden = true;
     configStep.hidden = state.status.configured;
     authStep.hidden = !state.status.configured;
     return;
@@ -101,13 +103,38 @@ function renderStatus() {
 
   setup.hidden = true;
   dashboard.hidden = false;
+  accountControls.hidden = false;
   const profile = state.status.profile || {};
   const pill = $("#account-pill");
   const image = profile.images?.[0]?.url;
   pill.innerHTML = image
-    ? `<img src="${escapeHtml(image)}" alt=""><span>${escapeHtml(profile.display_name)}</span>`
-    : `<span class="account-fallback">${escapeHtml((profile.display_name || "S")[0])}</span><span>${escapeHtml(profile.display_name || "Spotify")}</span>`;
-  pill.hidden = false;
+    ? `<img src="${escapeHtml(image)}" alt=""><span class="account-name">${escapeHtml(profile.display_name)}</span>`
+    : `<span class="account-fallback">${escapeHtml((profile.display_name || "S")[0])}</span><span class="account-name">${escapeHtml(profile.display_name || "Spotify")}</span>`;
+}
+
+async function disconnectSpotify() {
+  const button = $("#disconnect-button");
+  button.disabled = true;
+  button.textContent = "Cerrando…";
+  try {
+    await api("/api/disconnect", {
+      method: "POST",
+      headers: {"X-Dedupe-Intent": "confirmed"},
+      body: "{}",
+    });
+    state.scan = null;
+    state.selected.clear();
+    state.keepers.clear();
+    state.history = [];
+    state.status = await api("/api/status");
+    renderStatus();
+    toast("Sesión cerrada. Ya puedes conectar otra cuenta.");
+  } catch (error) {
+    toast(error.message, true);
+  } finally {
+    button.disabled = false;
+    button.textContent = "Cerrar sesión";
+  }
 }
 
 function refreshProfile() {
@@ -486,6 +513,7 @@ $("#change-client").addEventListener("click", () => {
 });
 
 $("#scan-button").addEventListener("click", scanLibrary);
+$("#disconnect-button").addEventListener("click", disconnectSpotify);
 let searchTimer;
 $("#track-search").addEventListener("input", event => {
   state.search = event.currentTarget.value;

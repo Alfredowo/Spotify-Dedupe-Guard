@@ -17,7 +17,7 @@ from typing import Any, Iterator
 
 ACCOUNTS_BASE = "https://accounts.spotify.com"
 API_BASE = "https://api.spotify.com/v1"
-SCOPES = "user-library-read user-library-modify playlist-modify-private"
+SCOPES = "user-read-private user-library-read user-library-modify playlist-modify-private"
 
 
 class SpotifyError(RuntimeError):

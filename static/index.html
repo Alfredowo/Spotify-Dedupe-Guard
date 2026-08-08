@@ -14,7 +14,10 @@
       <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
       <span><b>DEDUPE</b><em>GUARD</em></span>
     </a>
-    <div id="account-pill" class="account-pill" hidden></div>
+    <div id="account-controls" class="account-controls" hidden>
+      <div id="account-pill" class="account-pill"></div>
+      <button id="disconnect-button" class="account-signout" type="button">Cerrar sesión</button>
+    </div>
   </header>
 
   <main>
@@ -48,7 +51,7 @@
         <div id="auth-step" hidden>
           <span class="step-label">Autorización · 02</span>
           <h2>Autoriza tu biblioteca</h2>
-          <p>Spotify mostrará los permisos para leer y modificar “Tus me gusta” y crear la playlist de respaldo.</p>
+          <p>Spotify mostrará los permisos para identificar tu perfil, leer y modificar “Tus me gusta” y crear la playlist de respaldo.</p>
           <a class="button spotify" href="/auth/login"><span aria-hidden="true">●</span> Conectar con Spotify</a>
           <button id="change-client" class="text-button" type="button">Cambiar Client ID</button>
         </div>

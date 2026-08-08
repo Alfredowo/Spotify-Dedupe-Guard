@@ -95,6 +95,8 @@ a { color: var(--cyan); }
 .brand-mark i:nth-child(2), .brand-mark i:nth-child(4) { height: 16px; background: var(--violet); }
 .brand-mark i:nth-child(3) { height: 24px; }
 
+.account-controls { display: flex; align-items: center; gap: 10px; }
+
 .account-pill {
   padding: 7px 12px 7px 8px;
   border: 1px solid var(--line);
@@ -108,6 +110,10 @@ a { color: var(--cyan); }
 
 .account-pill img, .account-fallback { width: 27px; height: 27px; border-radius: 50%; object-fit: cover; }
 .account-fallback { display: grid; place-items: center; background: var(--violet); color: var(--ink); font-weight: 800; }
+.account-signout { padding: 7px 0; color: var(--muted); background: none; border: 0; border-bottom: 1px solid transparent; font-size: 12px; cursor: pointer; transition: color .18s ease, border-color .18s ease; }
+.account-signout:hover { color: var(--text); border-color: var(--coral); }
+.account-signout:focus-visible { color: var(--text); outline: 2px solid var(--cyan); outline-offset: 4px; }
+.account-signout:disabled { opacity: .55; cursor: wait; }
 
 main { width: min(1480px, 100%); margin: 0 auto; padding: 0 clamp(20px, 4vw, 64px) 80px; }
 
@@ -466,6 +472,9 @@ input:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(91,212,232,.
 
 @media (max-width: 560px) {
   .topbar { height: 66px; padding-inline: 18px; }
+  .account-pill { padding-right: 8px; }
+  .account-pill .account-name { display: none; }
+  .account-signout { font-size: 11px; }
   .groups-toolbar { top: 66px; }
   main { padding-inline: 18px; }
   .setup { min-height: calc(100vh - 66px); padding: 45px 0; }
