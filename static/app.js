@@ -8,6 +8,8 @@ const state = {
   history: [],
 };
 
+let scanPollPromise = null;
+
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 
@@ -69,6 +71,7 @@ async function boot() {
     renderStatus();
     if (state.status.authenticated) {
       await Promise.all([loadLatestScan(), loadHistory()]);
+      void resumeScan();
     }
   } catch (error) {
     toast(error.message, true);
@@ -311,18 +314,47 @@ function renderHistory() {
 }
 
 async function scanLibrary() {
+  try {
+    const job = await api("/api/scan", {method: "POST", body: "{}"});
+    await followScan(job, {announceResume: false});
+  } catch (error) {
+    toast(error.message, true);
+  }
+}
+
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function resumeScan() {
+  try {
+    const job = await api("/api/scan/status");
+    if (job.status === "running") await followScan(job, {announceResume: true});
+  } catch (error) {
+    toast(error.message, true);
+  }
+}
+
+function followScan(job, {announceResume = false} = {}) {
+  if (scanPollPromise) return scanPollPromise;
+  scanPollPromise = pollScan(job, announceResume).finally(() => {
+    scanPollPromise = null;
+  });
+  return scanPollPromise;
+}
+
+async function pollScan(job, announceResume) {
   const button = $("#scan-button");
   setBusy(button, true, "Leyendo canciones…");
-  const previousScanId = state.scan?.scan_id;
+  if (announceResume) toast("El análisis sigue en curso. Retomando la actualización…");
   try {
-    let requestError = null;
-    try {
-      await api("/api/scan", {method: "POST", body: "{}"});
-    } catch (error) {
-      requestError = error;
+    while (job.status === "running") {
+      await delay(900);
+      job = await api("/api/scan/status");
     }
+    if (job.status === "failed") throw new Error(job.error || "El análisis no pudo completarse.");
+    if (job.status !== "completed") return;
     await loadLatestScan();
-    if (requestError && state.scan?.scan_id === previousScanId) throw requestError;
     state.filter = "all";
     $$(".filter").forEach(item => item.classList.toggle("active", item.dataset.filter === "all"));
     renderScan();

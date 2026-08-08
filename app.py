@@ -29,6 +29,51 @@ PORT = 8765
 REDIRECT_URI = f"http://{HOST}:{PORT}/callback"
 
 
+class ScanJob:
+    """Keeps a library scan alive independently from the browser request."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._state: dict[str, Any] = {"status": "idle"}
+
+    def status(self) -> dict[str, Any]:
+        with self._lock:
+            return dict(self._state)
+
+    def start(self) -> dict[str, Any]:
+        with self._lock:
+            if self._state.get("status") == "running":
+                return dict(self._state)
+            self._state = {"status": "running", "started_at": utc_now()}
+            thread = threading.Thread(target=self._run, daemon=True, name="spotify-library-scan")
+            thread.start()
+            return dict(self._state)
+
+    def _run(self) -> None:
+        try:
+            items = spotify_client().saved_tracks()
+            result = detect_duplicates(items)
+            scan_id = store_scan(result)
+            state = {
+                "status": "completed",
+                "started_at": self.status().get("started_at"),
+                "finished_at": utc_now(),
+                "scan_id": scan_id,
+            }
+        except Exception as error:
+            state = {
+                "status": "failed",
+                "started_at": self.status().get("started_at"),
+                "finished_at": utc_now(),
+                "error": str(error) or "La operación no pudo completarse.",
+            }
+        with self._lock:
+            self._state = state
+
+
+SCAN_JOB = ScanJob()
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
@@ -194,6 +239,8 @@ class DedupeHandler(BaseHTTPRequestHandler):
                 self.api_status()
             elif parsed.path == "/api/scan/latest":
                 self.send_json({"scan": get_scan()})
+            elif parsed.path == "/api/scan/status":
+                self.send_json(SCAN_JOB.status())
             elif parsed.path == "/api/history":
                 self.send_json({"history": action_history()})
             elif parsed.path == "/auth/login":
@@ -290,10 +337,7 @@ class DedupeHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def api_scan(self) -> None:
-        items = spotify_client().saved_tracks()
-        result = detect_duplicates(items)
-        scan_id = store_scan(result)
-        self.send_json({"ok": True, "scan_id": scan_id})
+        self.send_json(SCAN_JOB.start(), HTTPStatus.ACCEPTED)
 
     def api_remove(self) -> None:
         payload = self.body_json()
