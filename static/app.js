@@ -170,6 +170,18 @@ function renderScan() {
   renderSelection();
 }
 
+function clearStaleScan() {
+  state.scan = null;
+  state.selected.clear();
+  state.keepers.clear();
+  $("#results").hidden = true;
+  const emptyState = $("#empty-state");
+  emptyState.hidden = false;
+  $("h2", emptyState).textContent = "Tu biblioteca ya cambió";
+  $("p", emptyState).textContent = "Los resultados anteriores se retiraron para evitar acciones duplicadas. Ejecuta una auditoría nueva para revisar el estado actual.";
+  $("#last-scan").textContent = "Biblioteca actualizada · Falta una auditoría nueva.";
+}
+
 function kindLabel(kind) {
   return {safe: "Seguro", probable: "Probable", version: "Versiones"}[kind] || kind;
 }
@@ -382,9 +394,7 @@ async function removeSelected() {
       }),
     });
     $("#confirm-dialog").close();
-    state.selected.clear();
-    renderGroups();
-    renderSelection();
+    clearStaleScan();
     await loadHistory();
     toast(payload.created_backup
       ? `${payload.removed} duplicados retirados. El respaldo quedó en Spotify.`

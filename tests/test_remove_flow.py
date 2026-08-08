@@ -45,6 +45,7 @@ class RemoveFlowTests(unittest.TestCase):
             patch("app.get_scan", return_value=scan),
             patch("app.spotify_client", return_value=client),
             patch("app.store_action", return_value=12),
+            patch("app.invalidate_scan") as invalidate_scan,
         ):
             handler.api_remove()
 
@@ -52,6 +53,7 @@ class RemoveFlowTests(unittest.TestCase):
         self.assertEqual(client.removed, ["spotify:track:suggested"])
         self.assertFalse(response["created_backup"])
         self.assertEqual(response["removed"], 1)
+        invalidate_scan.assert_called_once_with(7)
 
 
 if __name__ == "__main__":

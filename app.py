@@ -7,11 +7,12 @@ import sys
 import threading
 import urllib.parse
 import webbrowser
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from dedupe_engine import detect_duplicates
 from spotify_api import SpotifyClient, SpotifyError, TokenStore, new_oauth_state
@@ -96,29 +97,41 @@ def spotify_client() -> SpotifyClient:
     return SpotifyClient(client_id, REDIRECT_URI, TokenStore(TOKEN_PATH))
 
 
-def database() -> sqlite3.Connection:
+@contextmanager
+def database() -> Iterator[sqlite3.Connection]:
     DATA.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(DB_PATH)
     connection.row_factory = sqlite3.Row
-    connection.executescript(
-        """
-        CREATE TABLE IF NOT EXISTS scans (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            created_at TEXT NOT NULL,
-            total_tracks INTEGER NOT NULL,
-            result_json TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS actions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            created_at TEXT NOT NULL,
-            action TEXT NOT NULL,
-            payload_json TEXT NOT NULL,
-            backup_playlist_id TEXT,
-            related_action_id INTEGER
-        );
-        """
-    )
-    return connection
+    try:
+        connection.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS scans (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT NOT NULL,
+                total_tracks INTEGER NOT NULL,
+                result_json TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS actions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT NOT NULL,
+                action TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                backup_playlist_id TEXT,
+                related_action_id INTEGER
+            );
+            CREATE TABLE IF NOT EXISTS invalidated_scans (
+                scan_id INTEGER PRIMARY KEY,
+                invalidated_at TEXT NOT NULL
+            );
+            """
+        )
+        yield connection
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
 
 
 def store_scan(result: dict[str, Any]) -> int:
@@ -133,15 +146,35 @@ def store_scan(result: dict[str, Any]) -> int:
 def get_scan(scan_id: int | None = None) -> dict[str, Any] | None:
     with database() as db:
         if scan_id is None:
-            row = db.execute("SELECT * FROM scans ORDER BY id DESC LIMIT 1").fetchone()
+            row = db.execute(
+                """SELECT scans.* FROM scans
+                   WHERE NOT EXISTS (
+                       SELECT 1 FROM invalidated_scans WHERE invalidated_scans.scan_id = scans.id
+                   )
+                   ORDER BY scans.id DESC LIMIT 1"""
+            ).fetchone()
         else:
-            row = db.execute("SELECT * FROM scans WHERE id = ?", (scan_id,)).fetchone()
+            row = db.execute(
+                """SELECT scans.* FROM scans
+                   WHERE scans.id = ? AND NOT EXISTS (
+                       SELECT 1 FROM invalidated_scans WHERE invalidated_scans.scan_id = scans.id
+                   )""",
+                (scan_id,),
+            ).fetchone()
     if not row:
         return None
     result = json.loads(row["result_json"])
     result["scan_id"] = row["id"]
     result["created_at"] = row["created_at"]
     return result
+
+
+def invalidate_scan(scan_id: int) -> None:
+    with database() as db:
+        db.execute(
+            "INSERT OR IGNORE INTO invalidated_scans(scan_id, invalidated_at) VALUES (?, ?)",
+            (scan_id, utc_now()),
+        )
 
 
 def store_action(
@@ -394,6 +427,7 @@ class DedupeHandler(BaseHTTPRequestHandler):
             },
             backup_playlist_id=(backup or {}).get("id"),
         )
+        invalidate_scan(scan_id)
         self.send_json(
             {
                 "ok": True,
