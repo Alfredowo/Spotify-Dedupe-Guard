@@ -76,8 +76,9 @@
       <div id="results" hidden>
         <section class="summary-strip" aria-label="Resumen de auditoría">
           <div><strong id="total-tracks">0</strong><span>canciones revisadas</span></div>
-          <div><strong id="safe-count">0</strong><span>duplicados seguros</span></div>
-          <div><strong id="review-count">0</strong><span>para revisar</span></div>
+          <div><strong id="safe-count">0</strong><span>copias seguras</span></div>
+          <div><strong id="probable-count">0</strong><span>copias probables</span></div>
+          <div><strong id="version-count">0</strong><span>versiones relacionadas</span></div>
           <div class="selection-stat"><strong id="selected-count">0</strong><span>seleccionadas</span></div>
         </section>
 
@@ -101,17 +102,23 @@
                 <span id="visible-label">Todos los grupos</span>
                 <small id="group-count">0 coincidencias</small>
               </div>
-              <button id="select-safe" class="text-button" type="button">Seleccionar solo seguros</button>
+              <div class="selection-tools" aria-label="Categorías seleccionadas">
+                <button id="select-safe" class="selection-toggle safe" data-selection-kind="safe" type="button" aria-pressed="false"><i aria-hidden="true"></i> Seguros</button>
+                <button id="select-probable" class="selection-toggle probable" data-selection-kind="probable" type="button" aria-pressed="false"><i aria-hidden="true"></i> Probables</button>
+                <button id="select-version" class="selection-toggle version" data-selection-kind="version" type="button" aria-pressed="false"><i aria-hidden="true"></i> Versiones</button>
+              </div>
             </div>
+            <p class="control-hint"><span>○ Elige cuál conservar</span><span>□ Marca cuáles retirar</span></p>
             <div id="groups" class="groups"></div>
           </div>
         </div>
 
         <section class="action-dock" aria-label="Acciones de limpieza">
-          <div class="backup-lock">
+          <label class="backup-option" for="create-backup">
+            <input id="create-backup" type="checkbox" checked>
             <span class="lock" aria-hidden="true">◆</span>
-            <div><b>Respaldo obligatorio</b><small>Se creará una playlist privada antes de retirar canciones.</small></div>
-          </div>
+            <span><b>Crear playlist de respaldo</b><small>Recomendado: permite recuperar las copias aunque se pierda el historial local.</small></span>
+          </label>
           <button id="remove-button" class="button danger" type="button" disabled>Retirar <span>0</span> duplicados</button>
         </section>
       </div>
@@ -128,8 +135,9 @@
       <button class="dialog-close" value="cancel" aria-label="Cerrar">×</button>
       <span class="step-label">Confirmación final</span>
       <h2>Retirar <span id="confirm-count">0</span> canciones</h2>
-      <p>Primero se guardarán en una playlist privada de respaldo. Después desaparecerán de “Tus me gusta”.</p>
-      <label class="confirm-check"><input id="confirm-checkbox" type="checkbox"> Entiendo que esta acción modifica mi biblioteca.</label>
+      <p id="confirm-copy">Primero se guardarán en una playlist privada de respaldo. Después desaparecerán de “Tus me gusta”.</p>
+      <div id="no-backup-warning" class="no-backup-warning" hidden><b>Sin respaldo en Spotify</b><span>Si el historial local se borra, no habrá una playlist desde la cual recuperar estas canciones.</span></div>
+      <label class="confirm-check"><input id="confirm-checkbox" type="checkbox"> <span id="confirm-label">Entiendo que esta acción modifica mi biblioteca.</span></label>
       <div class="dialog-actions">
         <button class="button ghost" value="cancel">Cancelar</button>
         <button id="confirm-remove" class="button danger" value="default" type="button" disabled>Crear respaldo y retirar</button>

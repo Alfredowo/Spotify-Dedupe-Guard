@@ -5,10 +5,10 @@ Aplicación local para encontrar y retirar canciones repetidas de **Tus me gusta
 ## Qué hace
 
 - Descarga la biblioteca completa mediante la API oficial de Spotify.
-- Marca como **seguro** únicamente el mismo ISRC, artista principal y una diferencia máxima de cinco segundos.
+- Marca como **seguro** el mismo ISRC, artista, versión y duración compatible; también reconoce metadatos visibles idénticos con hasta dos segundos de diferencia aunque una reedición tenga otro ISRC.
 - Separa coincidencias por nombre en **probables** y **versiones** para revisión manual.
-- Recomienda conservar la edición de álbum frente a recopilaciones como `Greatest Hits`.
-- Crea una playlist privada de respaldo antes de retirar cualquier canción.
+- Recomienda conservar la edición de álbum frente a recopilaciones como `Greatest Hits`, pero permite elegir cualquier copia del grupo.
+- Ofrece crear una playlist privada de respaldo antes de retirar canciones; está activada de forma predeterminada, pero puede omitirse con advertencia explícita.
 - Guarda un historial local y permite deshacer una limpieza.
 - Cifra el token de Spotify con Windows DPAPI; no solicita un Client Secret.
 
@@ -43,9 +43,13 @@ Los permisos solicitados son:
    - **Seguros**: mismo ISRC, artista y duración compatible.
    - **Probables**: metadatos prácticamente iguales, pero sin ISRC compartido.
    - **Versiones**: hay diferencias de edición o duración.
-3. De forma predeterminada solo quedan seleccionados los duplicados seguros.
-4. Pulsa **Retirar duplicados** y confirma. La playlist de respaldo se crea antes de modificar Tus me gusta.
+3. De forma predeterminada solo quedan seleccionadas las copias seguras. Puedes añadir todos los probables o todas las versiones y cambiar cuál copia conservar en cada grupo.
+4. Pulsa **Retirar duplicados** y confirma. Decide si quieres crear la playlist de respaldo antes de modificar Tus me gusta.
 5. Usa **Deshacer** en el historial si quieres restaurarlos.
+
+## Qué significa ISRC
+
+El **International Standard Recording Code** identifica una grabación concreta, no la composición musical. La misma grabación suele conservar su ISRC cuando aparece en otro álbum, mientras que un live, remix o nueva grabación normalmente recibe otro. Algunas reediciones de catálogo pueden tener códigos distintos aunque sus metadatos y audio sean prácticamente idénticos; por eso el detector combina ISRC con título, artistas, álbum, versión y duración.
 
 ## Ejecución desde terminal
 

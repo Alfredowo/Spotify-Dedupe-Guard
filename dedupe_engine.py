@@ -192,16 +192,48 @@ def detect_duplicates(saved_items: list[dict[str, Any]]) -> dict[str, Any]:
     groups: list[dict[str, Any]] = []
     assigned: set[str] = set()
 
+    # Catalog reissues sometimes expose the same recording under a different ISRC.
+    # Exact visible metadata plus a near-identical duration is safe enough to treat
+    # as a duplicate even when that catalog identifier changed.
+    by_exact_metadata: dict[tuple[Any, ...], list[SavedTrack]] = {}
+    for track in tracks:
+        key = (
+            tuple(normalize(artist) for artist in track.artists),
+            normalize(track.name),
+            normalize(track.album),
+            normalize(track.album_type),
+            track.explicit,
+            track.tags,
+        )
+        by_exact_metadata.setdefault(key, []).append(track)
+
+    for candidates in by_exact_metadata.values():
+        if len(candidates) < 2:
+            continue
+        spread = max(t.duration_ms for t in candidates) - min(t.duration_ms for t in candidates)
+        if spread <= 2_000:
+            groups.append(
+                _build_group(
+                    candidates,
+                    "safe",
+                    0.98,
+                    "Mismo artista, título, álbum, versión y duración; el ISRC puede variar por reedición.",
+                )
+            )
+            assigned.update(track.id for track in candidates)
+
     by_isrc: dict[tuple[str, str], list[SavedTrack]] = {}
     for track in tracks:
-        if track.isrc:
+        if track.id not in assigned and track.isrc:
             by_isrc.setdefault((track.isrc, track.artist_key), []).append(track)
 
     for candidates in by_isrc.values():
         if len(candidates) < 2:
             continue
         spread = max(t.duration_ms for t in candidates) - min(t.duration_ms for t in candidates)
-        if spread <= 5_000:
+        families = {track.family_key for track in candidates}
+        signatures = {track.tags for track in candidates}
+        if spread <= 5_000 and len(families) == 1 and len(signatures) == 1:
             groups.append(
                 _build_group(
                     candidates,
@@ -239,6 +271,10 @@ def detect_duplicates(saved_items: list[dict[str, Any]]) -> dict[str, Any]:
 
     order = {"safe": 0, "probable": 1, "version": 2}
     groups.sort(key=lambda group: (order[group["kind"]], -len(group["remove"]), group["keeper"]["name"]))
+    removable = {
+        kind: sum(len(group["remove"]) for group in groups if group["kind"] == kind)
+        for kind in order
+    }
     return {
         "total_tracks": len(tracks),
         "groups": groups,
@@ -246,9 +282,9 @@ def detect_duplicates(saved_items: list[dict[str, Any]]) -> dict[str, Any]:
             "safe": sum(group["kind"] == "safe" for group in groups),
             "probable": sum(group["kind"] == "probable" for group in groups),
             "version": sum(group["kind"] == "version" for group in groups),
-            "removable_safe": sum(
-                len(group["remove"]) for group in groups if group["kind"] == "safe"
-            ),
+            "removable_safe": removable["safe"],
+            "removable_probable": removable["probable"],
+            "removable_version": removable["version"],
             "total_groups": len(groups),
         },
     }

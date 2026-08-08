@@ -3,6 +3,7 @@ const state = {
   scan: null,
   filter: "all",
   selected: new Set(),
+  keepers: new Map(),
   history: [],
 };
 
@@ -91,11 +92,12 @@ function renderStatus() {
   pill.hidden = false;
 }
 
-async function loadLatestScan() {
+async function loadLatestScan({resetSelection = true} = {}) {
   const payload = await api("/api/scan/latest");
   if (payload.scan) {
     state.scan = payload.scan;
-    selectSafe();
+    state.keepers = new Map(state.scan.groups.map(group => [group.id, group.keeper.id]));
+    if (resetSelection) selectSafe();
     renderScan();
   }
 }
@@ -107,9 +109,25 @@ async function loadHistory() {
 }
 
 function selectSafe() {
-  state.selected.clear();
+  selectCategory("safe", true);
+}
+
+function groupTracks(group) {
+  return [group.keeper, ...(group.remove || [])];
+}
+
+function selectedKeeper(group) {
+  return state.keepers.get(group.id) || group.keeper.id;
+}
+
+function selectCategory(kind, replace = false) {
+  if (replace) state.selected.clear();
   for (const group of state.scan?.groups || []) {
-    if (group.kind === "safe") group.remove.forEach(track => state.selected.add(track.id));
+    if (group.kind !== kind) continue;
+    const keeperId = selectedKeeper(group);
+    groupTracks(group).forEach(track => {
+      if (track.id !== keeperId) state.selected.add(track.id);
+    });
   }
 }
 
@@ -120,8 +138,9 @@ function renderScan() {
   $("#results").hidden = false;
   $("#last-scan").textContent = `Última auditoría · ${formatDateTime(scan.created_at)}`;
   $("#total-tracks").textContent = scan.total_tracks.toLocaleString("es-MX");
-  $("#safe-count").textContent = scan.summary.safe.toLocaleString("es-MX");
-  $("#review-count").textContent = (scan.summary.probable + scan.summary.version).toLocaleString("es-MX");
+  $("#safe-count").textContent = (scan.summary.removable_safe ?? removableCount("safe")).toLocaleString("es-MX");
+  $("#probable-count").textContent = (scan.summary.removable_probable ?? removableCount("probable")).toLocaleString("es-MX");
+  $("#version-count").textContent = (scan.summary.removable_version ?? removableCount("version")).toLocaleString("es-MX");
   $("#filter-all").textContent = scan.summary.total_groups;
   $("#filter-safe").textContent = scan.summary.safe;
   $("#filter-probable").textContent = scan.summary.probable;
@@ -134,12 +153,25 @@ function kindLabel(kind) {
   return {safe: "Seguro", probable: "Probable", version: "Versiones"}[kind] || kind;
 }
 
+function removableCount(kind) {
+  return (state.scan?.groups || [])
+    .filter(group => group.kind === kind)
+    .reduce((count, group) => count + groupTracks(group).length - 1, 0);
+}
+
 function trackRow(track, keeper, group) {
   const durationRatio = Math.max(22, Math.min(100, (track.duration_ms / Math.max(group.keeper.duration_ms, ...group.remove.map(item => item.duration_ms))) * 100));
   const tags = (track.tags || []).map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join("");
-  const control = keeper
-    ? `<span class="keep-symbol" title="Conservar">◆</span>`
-    : `<input class="track-check" type="checkbox" aria-label="Retirar ${escapeHtml(track.name)}" data-track-id="${escapeHtml(track.id)}" ${state.selected.has(track.id) ? "checked" : ""}>`;
+  const control = `<div class="row-controls">
+      <label class="keeper-control" title="Conservar esta copia">
+        <input class="keeper-radio" type="radio" name="keeper-${escapeHtml(group.id)}" data-group-id="${escapeHtml(group.id)}" data-track-id="${escapeHtml(track.id)}" ${keeper ? "checked" : ""}>
+        <span>Conservar</span>
+      </label>
+      <label class="remove-control${keeper ? " disabled" : ""}">
+        <input class="track-check" type="checkbox" aria-label="Retirar ${escapeHtml(track.name)}" data-track-id="${escapeHtml(track.id)}" ${state.selected.has(track.id) ? "checked" : ""} ${keeper ? "disabled" : ""}>
+        <span>Retirar</span>
+      </label>
+    </div>`;
   return `
     <div class="track-row ${keeper ? "keeper" : "duplicate"}">
       ${control}
@@ -164,13 +196,24 @@ function renderGroups() {
         <div class="confidence ${group.kind}"><i class="dot ${group.kind}"></i>${kindLabel(group.kind)} · ${Math.round(group.confidence * 100)}%</div>
         <div class="group-reason">${escapeHtml(group.reason)}<br><small>${escapeHtml(group.keeper_reason)}</small></div>
       </header>
-      ${trackRow(group.keeper, true, group)}
-      ${group.remove.map(track => trackRow(track, false, group)).join("")}
+      ${groupTracks(group).map(track => trackRow(track, track.id === selectedKeeper(group), group)).join("")}
     </article>`).join("") : `<div class="empty-state"><h2>No hay grupos en esta categoría</h2><p>Cambia el filtro o ejecuta una auditoría nueva.</p></div>`;
 
   $$(".track-check").forEach(input => input.addEventListener("change", event => {
     const id = event.currentTarget.dataset.trackId;
     event.currentTarget.checked ? state.selected.add(id) : state.selected.delete(id);
+    renderSelection();
+  }));
+  $$(".keeper-radio").forEach(input => input.addEventListener("change", event => {
+    const group = (state.scan?.groups || []).find(item => item.id === event.currentTarget.dataset.groupId);
+    if (!group) return;
+    const oldKeeper = selectedKeeper(group);
+    const newKeeper = event.currentTarget.dataset.trackId;
+    const newKeeperWasSelected = state.selected.has(newKeeper);
+    state.keepers.set(group.id, newKeeper);
+    state.selected.delete(newKeeper);
+    if (newKeeperWasSelected && oldKeeper !== newKeeper) state.selected.add(oldKeeper);
+    renderGroups();
     renderSelection();
   }));
 }
@@ -202,11 +245,18 @@ function renderHistory() {
 async function scanLibrary() {
   const button = $("#scan-button");
   setBusy(button, true, "Leyendo canciones…");
+  const previousScanId = state.scan?.scan_id;
   try {
-    const payload = await api("/api/scan", {method: "POST", body: "{}"});
-    state.scan = payload.scan;
+    let requestError = null;
+    try {
+      await api("/api/scan", {method: "POST", body: "{}"});
+    } catch (error) {
+      requestError = error;
+    }
+    await loadLatestScan();
+    if (requestError && state.scan?.scan_id === previousScanId) throw requestError;
     state.filter = "all";
-    selectSafe();
+    $$(".filter").forEach(item => item.classList.toggle("active", item.dataset.filter === "all"));
     renderScan();
     toast(`Auditoría completa: ${state.scan.summary.total_groups} grupos encontrados.`);
   } catch (error) {
@@ -224,14 +274,21 @@ async function removeSelected() {
     const payload = await api("/api/remove", {
       method: "POST",
       headers: {"X-Dedupe-Intent": "confirmed"},
-      body: JSON.stringify({scan_id: state.scan.scan_id, track_ids: [...state.selected]}),
+      body: JSON.stringify({
+        scan_id: state.scan.scan_id,
+        track_ids: [...state.selected],
+        keepers: Object.fromEntries(state.keepers),
+        create_backup: $("#create-backup").checked,
+      }),
     });
     $("#confirm-dialog").close();
     state.selected.clear();
     renderGroups();
     renderSelection();
     await loadHistory();
-    toast(`${payload.removed} duplicados retirados. El respaldo quedó en Spotify.`);
+    toast(payload.created_backup
+      ? `${payload.removed} duplicados retirados. El respaldo quedó en Spotify.`
+      : `${payload.removed} duplicados retirados sin crear playlist de respaldo.`);
   } catch (error) {
     toast(error.message, true);
   } finally {
@@ -287,6 +344,8 @@ $("#change-client").addEventListener("click", () => {
 
 $("#scan-button").addEventListener("click", scanLibrary);
 $("#select-safe").addEventListener("click", () => { selectSafe(); renderGroups(); renderSelection(); });
+$("#select-probable").addEventListener("click", () => { selectCategory("probable"); renderGroups(); renderSelection(); });
+$("#select-version").addEventListener("click", () => { selectCategory("version"); renderGroups(); renderSelection(); });
 
 $$(".filter").forEach(button => button.addEventListener("click", () => {
   state.filter = button.dataset.filter;
@@ -295,9 +354,18 @@ $$(".filter").forEach(button => button.addEventListener("click", () => {
 }));
 
 $("#remove-button").addEventListener("click", () => {
+  const withBackup = $("#create-backup").checked;
   $("#confirm-count").textContent = state.selected.size;
   $("#confirm-checkbox").checked = false;
   $("#confirm-remove").disabled = true;
+  $("#no-backup-warning").hidden = withBackup;
+  $("#confirm-copy").textContent = withBackup
+    ? "Primero se guardarán en una playlist privada de respaldo. Después desaparecerán de “Tus me gusta”."
+    : "Las canciones desaparecerán de “Tus me gusta” sin crear una playlist de respaldo.";
+  $("#confirm-label").textContent = withBackup
+    ? "Entiendo que esta acción modifica mi biblioteca."
+    : "Entiendo que estoy retirando canciones sin una playlist de respaldo.";
+  $("#confirm-remove").textContent = withBackup ? "Crear respaldo y retirar" : "Retirar sin respaldo";
   $("#confirm-dialog").showModal();
 });
 

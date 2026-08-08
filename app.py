@@ -292,16 +292,21 @@ class DedupeHandler(BaseHTTPRequestHandler):
     def api_scan(self) -> None:
         items = spotify_client().saved_tracks()
         result = detect_duplicates(items)
-        result["scan_id"] = store_scan(result)
-        result["created_at"] = utc_now()
-        self.send_json({"scan": result})
+        scan_id = store_scan(result)
+        self.send_json({"ok": True, "scan_id": scan_id})
 
     def api_remove(self) -> None:
         payload = self.body_json()
         scan_id = int(payload.get("scan_id") or 0)
         selected_ids = list(dict.fromkeys(str(item) for item in payload.get("track_ids") or []))
+        keeper_choices = payload.get("keepers") or {}
+        create_backup = payload.get("create_backup", True)
         if not selected_ids:
             raise ValueError("Selecciona al menos una canción para retirar.")
+        if not isinstance(keeper_choices, dict):
+            raise ValueError("La selección de copias a conservar no es válida.")
+        if not isinstance(create_backup, bool):
+            raise ValueError("La opción de respaldo no es válida.")
         scan = get_scan(scan_id)
         if not scan:
             raise ValueError("La auditoría ya no está disponible. Ejecuta una nueva.")
@@ -309,9 +314,19 @@ class DedupeHandler(BaseHTTPRequestHandler):
         allowed: dict[str, dict[str, Any]] = {}
         keepers: set[str] = set()
         for group in scan["groups"]:
-            keepers.add(group["keeper"]["id"])
-            for track in group["remove"]:
-                allowed[track["id"]] = {**track, "group_id": group["id"], "kind": group["kind"]}
+            group_tracks = [group["keeper"], *group["remove"]]
+            group_track_ids = {track["id"] for track in group_tracks}
+            keeper_id = str(keeper_choices.get(group["id"]) or group["keeper"]["id"])
+            if keeper_id not in group_track_ids:
+                raise ValueError("Una de las copias elegidas para conservar no pertenece a su grupo.")
+            keepers.add(keeper_id)
+            for track in group_tracks:
+                if track["id"] != keeper_id:
+                    allowed[track["id"]] = {
+                        **track,
+                        "group_id": group["id"],
+                        "kind": group["kind"],
+                    }
         if any(track_id not in allowed or track_id in keepers for track_id in selected_ids):
             raise ValueError("La selección contiene una canción que no puede retirarse.")
 
@@ -319,11 +334,20 @@ class DedupeHandler(BaseHTTPRequestHandler):
         uris = [track["uri"] for track in tracks]
         stamp = datetime.now().strftime("%Y-%m-%d %H.%M")
         client = spotify_client()
-        backup = client.create_backup_playlist(f"Dedupe Guard · Respaldo {stamp}", uris)
+        backup = (
+            client.create_backup_playlist(f"Dedupe Guard · Respaldo {stamp}", uris)
+            if create_backup
+            else None
+        )
         client.remove_library_items(uris)
         action_id = store_action(
             "remove",
-            {"scan_id": scan_id, "tracks": tracks},
+            {
+                "scan_id": scan_id,
+                "tracks": tracks,
+                "keepers": keeper_choices,
+                "created_backup": create_backup,
+            },
             backup_playlist_id=(backup or {}).get("id"),
         )
         self.send_json(
@@ -331,6 +355,7 @@ class DedupeHandler(BaseHTTPRequestHandler):
                 "ok": True,
                 "action_id": action_id,
                 "removed": len(tracks),
+                "created_backup": create_backup,
                 "backup_playlist": (backup or {}).get("external_urls", {}).get("spotify"),
             }
         )

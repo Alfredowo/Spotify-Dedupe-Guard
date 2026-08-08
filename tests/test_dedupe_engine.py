@@ -62,10 +62,17 @@ class DetectorTests(unittest.TestCase):
         self.assertEqual(result["groups"][0]["keeper"]["id"], "original")
         self.assertEqual(result["groups"][0]["remove"][0]["id"], "greatest")
 
-    def test_different_isrc_same_metadata_is_probable(self):
+    def test_different_isrc_same_metadata_is_safe(self):
         items = [saved("one", isrc="A"), saved("two", isrc="B", duration=266_000)]
         result = detect_duplicates(items)
+        self.assertEqual(result["summary"]["safe"], 1)
+        self.assertEqual(result["summary"]["removable_safe"], 1)
+
+    def test_different_isrc_and_album_same_title_is_probable(self):
+        items = [saved("one", isrc="A"), saved("two", isrc="B", album="Single", duration=266_000)]
+        result = detect_duplicates(items)
         self.assertEqual(result["summary"]["probable"], 1)
+        self.assertEqual(result["summary"]["removable_probable"], 1)
 
     def test_live_and_studio_are_never_safe(self):
         items = [
@@ -75,6 +82,7 @@ class DetectorTests(unittest.TestCase):
         result = detect_duplicates(items)
         self.assertEqual(result["summary"]["version"], 1)
         self.assertEqual(result["summary"]["removable_safe"], 0)
+        self.assertEqual(result["summary"]["removable_version"], 1)
 
     def test_different_artists_are_not_grouped(self):
         items = [saved("one", artist="Lenny Kravitz"), saved("two", artist="Cover Band")]
