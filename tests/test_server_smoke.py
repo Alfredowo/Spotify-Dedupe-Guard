@@ -1,8 +1,11 @@
 import json
 import threading
+import tempfile
 import unittest
 import urllib.request
 from http.server import ThreadingHTTPServer
+from pathlib import Path
+from unittest.mock import patch
 
 from app import DedupeHandler
 
@@ -10,6 +13,9 @@ from app import DedupeHandler
 class ServerSmokeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        cls.temp_dir = tempfile.TemporaryDirectory()
+        cls.token_patch = patch("app.TOKEN_PATH", Path(cls.temp_dir.name) / "spotify_token.bin")
+        cls.token_patch.start()
         cls.server = ThreadingHTTPServer(("127.0.0.1", 0), DedupeHandler)
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()
@@ -20,6 +26,8 @@ class ServerSmokeTests(unittest.TestCase):
         cls.server.shutdown()
         cls.server.server_close()
         cls.thread.join(timeout=2)
+        cls.token_patch.stop()
+        cls.temp_dir.cleanup()
 
     def test_home_page_is_served(self):
         with urllib.request.urlopen(self.base + "/", timeout=3) as response:

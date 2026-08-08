@@ -176,22 +176,34 @@ class SpotifyClient:
 
     @staticmethod
     def _read_json(request: urllib.request.Request) -> Any:
-        try:
-            with urllib.request.urlopen(request, timeout=30) as response:
-                raw = response.read()
-                return json.loads(raw) if raw else {}
-        except urllib.error.HTTPError as error:
-            raw = error.read().decode("utf-8", errors="replace")
+        for attempt in range(6):
             try:
-                payload = json.loads(raw)
-            except json.JSONDecodeError:
-                payload = raw
-            message = payload.get("error", payload) if isinstance(payload, dict) else payload
-            if isinstance(message, dict):
-                message = message.get("message") or str(message)
-            raise SpotifyError(str(message), error.code, payload) from error
-        except urllib.error.URLError as error:
-            raise SpotifyError(f"No se pudo conectar con Spotify: {error.reason}", 503) from error
+                with urllib.request.urlopen(request, timeout=30) as response:
+                    raw = response.read()
+                    return json.loads(raw) if raw else {}
+            except urllib.error.HTTPError as error:
+                raw = error.read().decode("utf-8", errors="replace")
+                try:
+                    payload = json.loads(raw)
+                except json.JSONDecodeError:
+                    payload = raw
+
+                if error.code == 429 and attempt < 5:
+                    try:
+                        retry_after = int(error.headers.get("Retry-After", "1"))
+                    except (TypeError, ValueError):
+                        retry_after = 1
+                    time.sleep(max(1, min(retry_after, 60)))
+                    continue
+
+                message = payload.get("error", payload) if isinstance(payload, dict) else payload
+                if isinstance(message, dict):
+                    message = message.get("message") or str(message)
+                raise SpotifyError(str(message), error.code, payload) from error
+            except urllib.error.URLError as error:
+                raise SpotifyError(f"No se pudo conectar con Spotify: {error.reason}", 503) from error
+
+        raise SpotifyError("Spotify mantuvo temporalmente el límite de solicitudes.", 429)
 
     def profile(self) -> dict[str, Any]:
         return self.request("GET", "/me")
