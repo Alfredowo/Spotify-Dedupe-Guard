@@ -3,5 +3,7 @@ __pycache__/
 data/config.json
 data/spotify_token.bin
 data/oauth_pending.json
+data/spotify_profile.json
 data/*.sqlite3
 data/*.sqlite3-*
+data/*.log

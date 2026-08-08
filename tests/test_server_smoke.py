@@ -40,6 +40,18 @@ class ServerSmokeTests(unittest.TestCase):
         self.assertEqual(payload["redirect_uri"], "http://127.0.0.1:8765/callback")
         self.assertFalse(payload["authenticated"])
 
+    def test_status_does_not_wait_for_spotify(self):
+        token_path = Path(self.temp_dir.name) / "spotify_token.bin"
+        token_path.write_bytes(b"local-token-marker")
+        try:
+            with patch("app.spotify_client", side_effect=AssertionError("Spotify should not be called")):
+                with urllib.request.urlopen(self.base + "/api/status", timeout=3) as response:
+                    payload = json.load(response)
+            self.assertTrue(payload["authenticated"])
+            self.assertIsNone(payload["profile"])
+        finally:
+            token_path.unlink(missing_ok=True)
+
 
 if __name__ == "__main__":
     unittest.main()

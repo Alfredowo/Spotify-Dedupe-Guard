@@ -146,22 +146,13 @@ def store_scan(result: dict[str, Any]) -> int:
 def get_scan(scan_id: int | None = None) -> dict[str, Any] | None:
     with database() as db:
         if scan_id is None:
-            row = db.execute(
-                """SELECT scans.* FROM scans
-                   WHERE NOT EXISTS (
-                       SELECT 1 FROM invalidated_scans WHERE invalidated_scans.scan_id = scans.id
-                   )
-                   ORDER BY scans.id DESC LIMIT 1"""
-            ).fetchone()
+            row = db.execute("SELECT * FROM scans ORDER BY id DESC LIMIT 1").fetchone()
         else:
-            row = db.execute(
-                """SELECT scans.* FROM scans
-                   WHERE scans.id = ? AND NOT EXISTS (
-                       SELECT 1 FROM invalidated_scans WHERE invalidated_scans.scan_id = scans.id
-                   )""",
-                (scan_id,),
-            ).fetchone()
-    if not row:
+            row = db.execute("SELECT * FROM scans WHERE id = ?", (scan_id,)).fetchone()
+        invalidated = row and db.execute(
+            "SELECT 1 FROM invalidated_scans WHERE scan_id = ?", (row["id"],)
+        ).fetchone()
+    if not row or invalidated:
         return None
     result = json.loads(row["result_json"])
     result["scan_id"] = row["id"]
@@ -310,25 +301,13 @@ class DedupeHandler(BaseHTTPRequestHandler):
     def api_status(self) -> None:
         config = load_config()
         configured = bool(config.get("client_id"))
-        authenticated = TOKEN_PATH.exists()
-        profile = None
-        auth_error = None
-        if configured and authenticated:
-            try:
-                raw_profile = spotify_client().profile()
-                profile = {
-                    "display_name": raw_profile.get("display_name") or "Spotify",
-                    "id": raw_profile.get("id"),
-                    "images": raw_profile.get("images") or [],
-                }
-            except SpotifyError as error:
-                auth_error = str(error)
+        authenticated = configured and TOKEN_PATH.exists()
         self.send_json(
             {
                 "configured": configured,
-                "authenticated": authenticated and not auth_error,
-                "profile": profile,
-                "auth_error": auth_error,
+                "authenticated": authenticated,
+                "profile": None,
+                "auth_error": None,
                 "redirect_uri": REDIRECT_URI,
             }
         )
