@@ -2,6 +2,7 @@ const state = {
   status: null,
   scan: null,
   filter: "all",
+  search: "",
   selected: new Set(),
   keepers: new Map(),
   history: [],
@@ -12,6 +13,14 @@ const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 
 function escapeHtml(value = "") {
   return String(value).replace(/[&<>'"]/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[char]));
+}
+
+function normalizeSearch(value = "") {
+  return String(value)
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("es-MX")
+    .trim();
 }
 
 async function api(path, options = {}) {
@@ -196,9 +205,25 @@ function trackRow(track, keeper, group) {
 }
 
 function renderGroups() {
-  const groups = (state.scan?.groups || []).filter(group => state.filter === "all" || group.kind === state.filter);
+  const query = normalizeSearch(state.search);
+  const groups = (state.scan?.groups || []).filter(group => {
+    if (state.filter !== "all" && group.kind !== state.filter) return false;
+    if (!query) return true;
+    const searchable = groupTracks(group).flatMap(track => [
+      track.name,
+      ...(track.artists || []),
+      track.album,
+      ...(track.tags || []),
+    ]).join(" ");
+    return normalizeSearch(searchable).includes(query);
+  });
   $("#group-count").textContent = `${groups.length} ${groups.length === 1 ? "coincidencia" : "coincidencias"}`;
-  $("#visible-label").textContent = state.filter === "all" ? "Todos los grupos" : kindLabel(state.filter);
+  const visibleLabel = $("#visible-label");
+  visibleLabel.textContent = state.filter === "all" ? "Todos los grupos" : kindLabel(state.filter);
+  visibleLabel.dataset.kind = state.filter;
+  const emptyMessage = query
+    ? `<div class="empty-state"><h2>Sin coincidencias</h2><p>Prueba otro título, artista o álbum.</p></div>`
+    : `<div class="empty-state"><h2>No hay grupos en esta categoría</h2><p>Cambia el filtro o ejecuta una auditoría nueva.</p></div>`;
   $("#groups").innerHTML = groups.length ? groups.map(group => `
     <article class="group-card" data-kind="${group.kind}">
       <header class="group-head">
@@ -206,7 +231,7 @@ function renderGroups() {
         <div class="group-reason">${escapeHtml(group.reason)}<br><small>${escapeHtml(group.keeper_reason)}</small></div>
       </header>
       ${groupTracks(group).map(track => trackRow(track, track.id === selectedKeeper(group), group)).join("")}
-    </article>`).join("") : `<div class="empty-state"><h2>No hay grupos en esta categoría</h2><p>Cambia el filtro o ejecuta una auditoría nueva.</p></div>`;
+    </article>`).join("") : emptyMessage;
 
   $$(".track-check").forEach(input => input.addEventListener("change", event => {
     const id = event.currentTarget.dataset.trackId;
@@ -386,6 +411,19 @@ $("#change-client").addEventListener("click", () => {
 });
 
 $("#scan-button").addEventListener("click", scanLibrary);
+let searchTimer;
+$("#track-search").addEventListener("input", event => {
+  state.search = event.currentTarget.value;
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(renderGroups, 120);
+});
+$("#track-search").addEventListener("keydown", event => {
+  if (event.key !== "Escape" || !event.currentTarget.value) return;
+  event.currentTarget.value = "";
+  state.search = "";
+  clearTimeout(searchTimer);
+  renderGroups();
+});
 $$('[data-selection-kind]').forEach(checkbox => checkbox.addEventListener("change", () => {
   toggleCategory(checkbox.dataset.selectionKind);
   renderGroups();

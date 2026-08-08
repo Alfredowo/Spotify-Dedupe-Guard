@@ -100,10 +100,15 @@
             <div id="groups-toolbar-sentinel" class="groups-toolbar-sentinel" aria-hidden="true"></div>
             <div id="groups-toolbar" class="groups-toolbar">
               <div class="list-toolbar">
-                <div>
-                  <span id="visible-label">Todos los grupos</span>
+                <div class="list-toolbar-title">
+                  <span id="visible-label" data-kind="all">Todos los grupos</span>
                   <small id="group-count">0 coincidencias</small>
                 </div>
+                <label class="search-control" for="track-search">
+                  <span class="visually-hidden">Buscar canciones</span>
+                  <span class="search-icon" aria-hidden="true">⌕</span>
+                  <input id="track-search" name="track_search" type="search" autocomplete="off" spellcheck="false" placeholder="Buscar canción, artista o álbum…">
+                </label>
                 <div class="selection-tools" aria-label="Categorías seleccionadas">
                   <label class="selection-option safe" for="select-safe"><input id="select-safe" data-selection-kind="safe" type="checkbox"> <span>Seguros</span></label>
                   <label class="selection-option probable" for="select-probable"><input id="select-probable" data-selection-kind="probable" type="checkbox"> <span>Probables</span></label>
