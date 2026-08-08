@@ -120,15 +120,24 @@ function selectedKeeper(group) {
   return state.keepers.get(group.id) || group.keeper.id;
 }
 
+function categoryTrackIds(kind) {
+  return (state.scan?.groups || [])
+    .filter(group => group.kind === kind)
+    .flatMap(group => {
+      const keeperId = selectedKeeper(group);
+      return groupTracks(group).filter(track => track.id !== keeperId).map(track => track.id);
+    });
+}
+
 function selectCategory(kind, replace = false) {
   if (replace) state.selected.clear();
-  for (const group of state.scan?.groups || []) {
-    if (group.kind !== kind) continue;
-    const keeperId = selectedKeeper(group);
-    groupTracks(group).forEach(track => {
-      if (track.id !== keeperId) state.selected.add(track.id);
-    });
-  }
+  categoryTrackIds(kind).forEach(trackId => state.selected.add(trackId));
+}
+
+function toggleCategory(kind) {
+  const trackIds = categoryTrackIds(kind);
+  const allSelected = trackIds.length > 0 && trackIds.every(trackId => state.selected.has(trackId));
+  trackIds.forEach(trackId => allSelected ? state.selected.delete(trackId) : state.selected.add(trackId));
 }
 
 function renderScan() {
@@ -168,7 +177,7 @@ function trackRow(track, keeper, group) {
         <span>Conservar</span>
       </label>
       <label class="remove-control${keeper ? " disabled" : ""}">
-        <input class="track-check" type="checkbox" aria-label="Retirar ${escapeHtml(track.name)}" data-track-id="${escapeHtml(track.id)}" ${state.selected.has(track.id) ? "checked" : ""} ${keeper ? "disabled" : ""}>
+        <input class="track-check" type="checkbox" name="remove-${escapeHtml(group.id)}" value="${escapeHtml(track.id)}" aria-label="Retirar ${escapeHtml(track.name)}" data-track-id="${escapeHtml(track.id)}" ${state.selected.has(track.id) ? "checked" : ""} ${keeper ? "disabled" : ""}>
         <span>Retirar</span>
       </label>
     </div>`;
@@ -224,6 +233,13 @@ function renderSelection() {
   const button = $("#remove-button");
   button.disabled = count === 0;
   $("span", button).textContent = count;
+  $$("[data-selection-kind]").forEach(toggle => {
+    const trackIds = categoryTrackIds(toggle.dataset.selectionKind);
+    const active = trackIds.length > 0 && trackIds.every(trackId => state.selected.has(trackId));
+    toggle.classList.toggle("active", active);
+    toggle.setAttribute("aria-pressed", String(active));
+    toggle.disabled = trackIds.length === 0;
+  });
 }
 
 function renderHistory() {
@@ -343,9 +359,11 @@ $("#change-client").addEventListener("click", () => {
 });
 
 $("#scan-button").addEventListener("click", scanLibrary);
-$("#select-safe").addEventListener("click", () => { selectSafe(); renderGroups(); renderSelection(); });
-$("#select-probable").addEventListener("click", () => { selectCategory("probable"); renderGroups(); renderSelection(); });
-$("#select-version").addEventListener("click", () => { selectCategory("version"); renderGroups(); renderSelection(); });
+$$('[data-selection-kind]').forEach(button => button.addEventListener("click", () => {
+  toggleCategory(button.dataset.selectionKind);
+  renderGroups();
+  renderSelection();
+}));
 
 $$(".filter").forEach(button => button.addEventListener("click", () => {
   state.filter = button.dataset.filter;

@@ -132,14 +132,14 @@
 
   <dialog id="confirm-dialog" class="confirm-dialog">
     <form method="dialog">
-      <button class="dialog-close" value="cancel" aria-label="Cerrar">×</button>
+      <button class="dialog-close" type="submit" value="cancel" aria-label="Cerrar">×</button>
       <span class="step-label">Confirmación final</span>
       <h2>Retirar <span id="confirm-count">0</span> canciones</h2>
       <p id="confirm-copy">Primero se guardarán en una playlist privada de respaldo. Después desaparecerán de “Tus me gusta”.</p>
       <div id="no-backup-warning" class="no-backup-warning" hidden><b>Sin respaldo en Spotify</b><span>Si el historial local se borra, no habrá una playlist desde la cual recuperar estas canciones.</span></div>
       <label class="confirm-check"><input id="confirm-checkbox" type="checkbox"> <span id="confirm-label">Entiendo que esta acción modifica mi biblioteca.</span></label>
       <div class="dialog-actions">
-        <button class="button ghost" value="cancel">Cancelar</button>
+        <button class="button ghost" type="submit" value="cancel">Cancelar</button>
         <button id="confirm-remove" class="button danger" value="default" type="button" disabled>Crear respaldo y retirar</button>
       </div>
     </form>

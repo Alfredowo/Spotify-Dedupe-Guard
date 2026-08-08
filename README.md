@@ -43,7 +43,7 @@ Los permisos solicitados son:
    - **Seguros**: mismo ISRC, artista y duración compatible.
    - **Probables**: metadatos prácticamente iguales, pero sin ISRC compartido.
    - **Versiones**: hay diferencias de edición o duración.
-3. De forma predeterminada solo quedan seleccionadas las copias seguras. Puedes añadir todos los probables o todas las versiones y cambiar cuál copia conservar en cada grupo.
+3. De forma predeterminada solo quedan seleccionadas las copias seguras. Los controles **Seguros**, **Probables** y **Versiones** activan o desactivan todas las copias de cada categoría; también puedes cambiar cuál conservar en cada grupo.
 4. Pulsa **Retirar duplicados** y confirma. Decide si quieres crear la playlist de respaldo antes de modificar Tus me gusta.
 5. Usa **Deshacer** en el historial si quieres restaurarlos.
 
