@@ -71,7 +71,7 @@ async function boot() {
     state.status = await api("/api/status");
     renderStatus();
     if (state.status.authenticated) {
-      if (!state.status.profile) void refreshProfile();
+      if (!profileReady(state.status)) void refreshProfile();
       await Promise.all([loadLatestScan(), loadHistory()]);
       void resumeScan();
     }
@@ -114,11 +114,15 @@ function refreshProfile() {
   return profileRefreshPromise;
 }
 
+function profileReady(status) {
+  return Boolean(status.profile?.id || status.profile?.images?.[0]?.url);
+}
+
 async function pollProfile() {
-  for (let attempt = 0; attempt < 35; attempt += 1) {
-    await delay(1000);
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    await delay(2500);
     const status = await api("/api/status");
-    if (!status.authenticated || status.profile) {
+    if (!status.authenticated || profileReady(status)) {
       state.status = status;
       renderStatus();
       return;
@@ -259,8 +263,8 @@ function renderGroups() {
   visibleLabel.textContent = state.filter === "all" ? "Todos los grupos" : kindLabel(state.filter);
   visibleLabel.dataset.kind = state.filter;
   const emptyMessage = query
-    ? `<div class="empty-state"><h2>Sin coincidencias</h2><p>Prueba otro título, artista o álbum.</p></div>`
-    : `<div class="empty-state"><h2>No hay grupos en esta categoría</h2><p>Cambia el filtro o ejecuta una auditoría nueva.</p></div>`;
+    ? `<div class="groups-empty"><h2>No encontramos esa canción</h2><p>Prueba con otro título, artista o álbum.</p></div>`
+    : `<div class="groups-empty"><h2>Todo limpio por aquí</h2><p>No encontramos duplicados en esta categoría. Puedes explorar otro filtro o analizar de nuevo cuando cambie tu biblioteca.</p></div>`;
   $("#groups").innerHTML = groups.length ? groups.map(group => `
     <article class="group-card" data-kind="${group.kind}">
       <header class="group-head">
