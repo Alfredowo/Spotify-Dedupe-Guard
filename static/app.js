@@ -236,8 +236,7 @@ function renderSelection() {
   $$("[data-selection-kind]").forEach(toggle => {
     const trackIds = categoryTrackIds(toggle.dataset.selectionKind);
     const active = trackIds.length > 0 && trackIds.every(trackId => state.selected.has(trackId));
-    toggle.classList.toggle("active", active);
-    toggle.setAttribute("aria-pressed", String(active));
+    toggle.checked = active;
     toggle.disabled = trackIds.length === 0;
   });
 }
@@ -359,8 +358,8 @@ $("#change-client").addEventListener("click", () => {
 });
 
 $("#scan-button").addEventListener("click", scanLibrary);
-$$('[data-selection-kind]').forEach(button => button.addEventListener("click", () => {
-  toggleCategory(button.dataset.selectionKind);
+$$('[data-selection-kind]').forEach(checkbox => checkbox.addEventListener("change", () => {
+  toggleCategory(checkbox.dataset.selectionKind);
   renderGroups();
   renderSelection();
 }));
