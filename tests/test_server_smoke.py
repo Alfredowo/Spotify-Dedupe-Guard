@@ -53,7 +53,8 @@ class ServerSmokeTests(unittest.TestCase):
                     payload = json.load(response)
             self.assertTrue(payload["authenticated"])
             self.assertIsNone(payload["profile"])
-            refresh_profile.assert_called_once_with()
+            self.assertFalse(payload["profile_refreshing"])
+            refresh_profile.assert_not_called()
         finally:
             token_path.unlink(missing_ok=True)
 

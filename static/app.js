@@ -9,7 +9,6 @@ const state = {
 };
 
 let scanPollPromise = null;
-let profileRefreshPromise = null;
 const TOAST_DURATION_MS = 4200;
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -75,7 +74,7 @@ async function boot() {
     state.status = await api("/api/status");
     renderStatus();
     if (state.status.authenticated) {
-      if (!profileReady(state.status)) void refreshProfile();
+      if (state.status.profile_refreshing) void waitForProfileRefresh();
       await Promise.all([loadLatestScan(), loadHistory()]);
       void resumeScan();
     }
@@ -137,23 +136,11 @@ async function disconnectSpotify() {
   }
 }
 
-function refreshProfile() {
-  if (profileRefreshPromise) return profileRefreshPromise;
-  profileRefreshPromise = pollProfile().finally(() => {
-    profileRefreshPromise = null;
-  });
-  return profileRefreshPromise;
-}
-
-function profileReady(status) {
-  return Boolean(status.profile?.id || status.profile?.images?.[0]?.url);
-}
-
-async function pollProfile() {
-  for (let attempt = 0; attempt < 120; attempt += 1) {
-    await delay(2500);
+async function waitForProfileRefresh() {
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    await delay(1000);
     const status = await api("/api/status");
-    if (!status.authenticated || profileReady(status)) {
+    if (!status.authenticated || !status.profile_refreshing) {
       state.status = status;
       renderStatus();
       return;

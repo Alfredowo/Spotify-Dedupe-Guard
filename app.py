@@ -133,6 +133,10 @@ class ProfileCache:
             self._refreshing = True
         threading.Thread(target=self._refresh, daemon=True, name="spotify-profile-refresh").start()
 
+    def is_refreshing(self) -> bool:
+        with self._lock:
+            return self._refreshing
+
     def _refresh(self) -> None:
         try:
             raw_profile = spotify_client().profile()
@@ -366,13 +370,12 @@ class DedupeHandler(BaseHTTPRequestHandler):
                 profile = json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 profile = None
-        if authenticated:
-            PROFILE_CACHE.refresh_async()
         self.send_json(
             {
                 "configured": configured,
                 "authenticated": authenticated,
                 "profile": profile,
+                "profile_refreshing": authenticated and PROFILE_CACHE.is_refreshing(),
                 "auth_error": None,
                 "redirect_uri": REDIRECT_URI,
             }

@@ -158,6 +158,7 @@ class SpotifyClient:
         *,
         query: dict[str, Any] | None = None,
         body: dict[str, Any] | None = None,
+        max_attempts: int = 6,
     ) -> Any:
         url = f"{API_BASE}{path}"
         if query:
@@ -172,11 +173,11 @@ class SpotifyClient:
             },
             method=method,
         )
-        return self._read_json(request)
+        return self._read_json(request, max_attempts=max_attempts)
 
     @staticmethod
-    def _read_json(request: urllib.request.Request) -> Any:
-        for attempt in range(6):
+    def _read_json(request: urllib.request.Request, *, max_attempts: int = 6) -> Any:
+        for attempt in range(max_attempts):
             try:
                 with urllib.request.urlopen(request, timeout=30) as response:
                     raw = response.read()
@@ -188,14 +189,15 @@ class SpotifyClient:
                 except json.JSONDecodeError:
                     payload = raw
 
-                if error.code == 429 and attempt < 5:
+                if error.code == 429 and attempt < max_attempts - 1:
                     try:
                         retry_after = int(error.headers.get("Retry-After", "1"))
                     except (TypeError, ValueError):
                         retry_after = 1
+                    endpoint = urllib.parse.urlparse(request.full_url).path
                     print(
-                        f"Spotify respondió 429; reintentando en {max(1, min(retry_after, 60))} s "
-                        f"(intento {attempt + 1}/6).",
+                        f"Spotify respondió 429 en {endpoint}; reintentando en "
+                        f"{max(1, min(retry_after, 60))} s (intento {attempt + 1}/{max_attempts}).",
                         flush=True,
                     )
                     time.sleep(max(1, min(retry_after, 60)))
@@ -211,7 +213,7 @@ class SpotifyClient:
         raise SpotifyError("Spotify mantuvo temporalmente el límite de solicitudes.", 429)
 
     def profile(self) -> dict[str, Any]:
-        return self.request("GET", "/me")
+        return self.request("GET", "/me", max_attempts=1)
 
     def saved_tracks(self) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
