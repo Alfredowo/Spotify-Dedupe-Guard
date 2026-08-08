@@ -9,6 +9,7 @@ const state = {
 };
 
 let scanPollPromise = null;
+let profileRefreshPromise = null;
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -70,6 +71,7 @@ async function boot() {
     state.status = await api("/api/status");
     renderStatus();
     if (state.status.authenticated) {
+      if (!state.status.profile) void refreshProfile();
       await Promise.all([loadLatestScan(), loadHistory()]);
       void resumeScan();
     }
@@ -102,6 +104,26 @@ function renderStatus() {
     ? `<img src="${escapeHtml(image)}" alt=""><span>${escapeHtml(profile.display_name)}</span>`
     : `<span class="account-fallback">${escapeHtml((profile.display_name || "S")[0])}</span><span>${escapeHtml(profile.display_name || "Spotify")}</span>`;
   pill.hidden = false;
+}
+
+function refreshProfile() {
+  if (profileRefreshPromise) return profileRefreshPromise;
+  profileRefreshPromise = pollProfile().finally(() => {
+    profileRefreshPromise = null;
+  });
+  return profileRefreshPromise;
+}
+
+async function pollProfile() {
+  for (let attempt = 0; attempt < 35; attempt += 1) {
+    await delay(1000);
+    const status = await api("/api/status");
+    if (!status.authenticated || status.profile) {
+      state.status = status;
+      renderStatus();
+      return;
+    }
+  }
 }
 
 async function loadLatestScan({resetSelection = true} = {}) {

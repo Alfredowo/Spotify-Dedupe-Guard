@@ -23,6 +23,7 @@ STATIC = ROOT / "static"
 DATA = ROOT / "data"
 CONFIG_PATH = DATA / "config.json"
 TOKEN_PATH = DATA / "spotify_token.bin"
+PROFILE_PATH = DATA / "spotify_profile.json"
 OAUTH_PATH = DATA / "oauth_pending.json"
 DB_PATH = DATA / "dedupe.sqlite3"
 HOST = "127.0.0.1"
@@ -95,6 +96,55 @@ def spotify_client() -> SpotifyClient:
     if not client_id:
         raise SpotifyError("Configura el Client ID de Spotify.", 400)
     return SpotifyClient(client_id, REDIRECT_URI, TokenStore(TOKEN_PATH))
+
+
+class ProfileCache:
+    """Serves the last profile immediately and refreshes it without blocking boot."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self._lock = threading.Lock()
+        self._refreshing = False
+
+    def get(self) -> dict[str, Any] | None:
+        with self._lock:
+            if not self.path.exists():
+                return None
+            try:
+                return json.loads(self.path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                return None
+
+    def clear(self) -> None:
+        with self._lock:
+            self.path.unlink(missing_ok=True)
+
+    def refresh_async(self) -> None:
+        with self._lock:
+            if self._refreshing:
+                return
+            self._refreshing = True
+        threading.Thread(target=self._refresh, daemon=True, name="spotify-profile-refresh").start()
+
+    def _refresh(self) -> None:
+        try:
+            raw_profile = spotify_client().profile()
+            profile = {
+                "display_name": raw_profile.get("display_name") or "Spotify",
+                "id": raw_profile.get("id"),
+                "images": raw_profile.get("images") or [],
+            }
+            with self._lock:
+                self.path.parent.mkdir(parents=True, exist_ok=True)
+                self.path.write_text(json.dumps(profile, ensure_ascii=False), encoding="utf-8")
+        except Exception as error:
+            print(f"No se pudo actualizar el perfil de Spotify: {error}")
+        finally:
+            with self._lock:
+                self._refreshing = False
+
+
+PROFILE_CACHE = ProfileCache(PROFILE_PATH)
 
 
 @contextmanager
@@ -284,6 +334,7 @@ class DedupeHandler(BaseHTTPRequestHandler):
             elif parsed.path == "/api/disconnect":
                 self.require_intent()
                 TokenStore(TOKEN_PATH).clear()
+                PROFILE_CACHE.clear()
                 self.send_json({"ok": True})
             elif parsed.path == "/api/scan":
                 self.api_scan()
@@ -302,11 +353,19 @@ class DedupeHandler(BaseHTTPRequestHandler):
         config = load_config()
         configured = bool(config.get("client_id"))
         authenticated = configured and TOKEN_PATH.exists()
+        profile = PROFILE_CACHE.get() if authenticated else None
+        if authenticated and profile is None and PROFILE_PATH.exists():
+            try:
+                profile = json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                profile = None
+        if authenticated:
+            PROFILE_CACHE.refresh_async()
         self.send_json(
             {
                 "configured": configured,
                 "authenticated": authenticated,
-                "profile": None,
+                "profile": profile,
                 "auth_error": None,
                 "redirect_uri": REDIRECT_URI,
             }
@@ -319,6 +378,7 @@ class DedupeHandler(BaseHTTPRequestHandler):
         if len(client_id) < 16 or len(client_id) > 64:
             raise ValueError("Revisa el Client ID de Spotify.")
         save_config({"client_id": client_id})
+        PROFILE_CACHE.clear()
         self.send_json({"ok": True, "redirect_uri": REDIRECT_URI})
 
     def auth_login(self) -> None:
@@ -343,6 +403,8 @@ class DedupeHandler(BaseHTTPRequestHandler):
         if not code or state != pending.get("state"):
             raise SpotifyError("La respuesta de autorización no es válida.", 400)
         spotify_client().exchange_code(code, pending["verifier"])
+        PROFILE_CACHE.clear()
+        PROFILE_CACHE.refresh_async()
         OAUTH_PATH.unlink(missing_ok=True)
         self.send_response(302)
         self.send_header("Location", "/?connected=1")

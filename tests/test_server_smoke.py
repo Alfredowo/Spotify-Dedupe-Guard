@@ -44,11 +44,16 @@ class ServerSmokeTests(unittest.TestCase):
         token_path = Path(self.temp_dir.name) / "spotify_token.bin"
         token_path.write_bytes(b"local-token-marker")
         try:
-            with patch("app.spotify_client", side_effect=AssertionError("Spotify should not be called")):
+            with (
+                patch("app.PROFILE_CACHE.get", return_value=None),
+                patch("app.PROFILE_PATH", Path(self.temp_dir.name) / "missing-profile.json"),
+                patch("app.PROFILE_CACHE.refresh_async") as refresh_profile,
+            ):
                 with urllib.request.urlopen(self.base + "/api/status", timeout=3) as response:
                     payload = json.load(response)
             self.assertTrue(payload["authenticated"])
             self.assertIsNone(payload["profile"])
+            refresh_profile.assert_called_once_with()
         finally:
             token_path.unlink(missing_ok=True)
 
