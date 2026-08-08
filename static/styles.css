@@ -217,6 +217,7 @@ input:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(91,212,232,.
 .dashboard-head h1 span { color: transparent; -webkit-text-stroke: 1px var(--violet); }
 .scan-control { padding-bottom: 10px; text-align: right; }
 .scan-control p { color: var(--muted); font-family: var(--mono); font-size: 11px; }
+.scan-control .rate-limit-note { max-width: 360px; margin: 10px 0 0 auto; color: var(--amber); line-height: 1.45; }
 .scan { color: var(--text); background: var(--panel-2); border-color: var(--line); }
 .scan, .danger { border-radius: 6px; }
 .scan-disc { width: 18px; height: 18px; border: 4px double var(--cyan); border-radius: 50%; }
@@ -451,6 +452,7 @@ input:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(91,212,232,.
   .setup { grid-template-columns: 1fr; }
   .dashboard-head { align-items: start; flex-direction: column; }
   .scan-control { text-align: left; }
+  .scan-control .rate-limit-note { margin-left: 0; }
   .summary-strip { grid-template-columns: repeat(2, 1fr); }
   .summary-strip > div:nth-child(even) { border-right: 0; }
   .summary-strip > div { border-bottom: 1px solid var(--line); }

@@ -9,6 +9,7 @@ const state = {
 };
 
 let scanPollPromise = null;
+let rateLimitTimer = null;
 const TOAST_DURATION_MS = 4200;
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -32,7 +33,12 @@ async function api(path, options = {}) {
     headers: {"Content-Type": "application/json", ...(options.headers || {})},
   });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.error || "La operación no pudo completarse.");
+  if (!response.ok) {
+    const error = new Error(payload.error || "La operación no pudo completarse.");
+    error.status = response.status;
+    error.details = payload.details;
+    throw error;
+  }
   return payload;
 }
 
@@ -57,6 +63,62 @@ function setBusy(button, busy, busyText = "Procesando…") {
 function formatDuration(ms) {
   const seconds = Math.round((ms || 0) / 1000);
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+function isRateLimitError(error) {
+  return error?.status === 429 || /too many requests|\b429\b|spotify limitó temporalmente/i.test(error?.message || "");
+}
+
+function formatRateLimitWait(seconds) {
+  const safeSeconds = Math.max(0, Math.ceil(seconds));
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const remainder = safeSeconds % 60;
+  if (hours) return `${hours} h ${minutes} min`;
+  if (minutes) return `${minutes} min ${remainder} s`;
+  return `${remainder} s`;
+}
+
+function renderRateLimit(rateLimit = state.status?.rate_limit) {
+  const note = $("#rate-limit-note");
+  const button = $("#scan-button");
+  clearInterval(rateLimitTimer);
+  rateLimitTimer = null;
+
+  let remaining = Number(rateLimit?.retry_after || 0);
+  if (!rateLimit?.active || remaining <= 0) {
+    note.hidden = true;
+    if (!button.classList.contains("loading")) button.disabled = false;
+    return;
+  }
+
+  const deadline = Date.now() + remaining * 1000;
+  const update = () => {
+    remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+    if (state.status?.rate_limit) state.status.rate_limit.retry_after = remaining;
+    if (remaining <= 0) {
+      clearInterval(rateLimitTimer);
+      rateLimitTimer = null;
+      if (state.status?.rate_limit) state.status.rate_limit.active = false;
+      note.hidden = true;
+      if (!button.classList.contains("loading")) button.disabled = false;
+      return;
+    }
+    button.disabled = true;
+    note.hidden = false;
+    const explanation = rateLimit?.reason === "QUOTA_EXCEEDED"
+      ? "Se alcanzó la cuota de Spotify para apps en desarrollo."
+      : "Spotify limitó temporalmente las solicitudes.";
+    note.textContent = `${explanation} Podrás volver a analizar en ${formatRateLimitWait(remaining)}.`;
+  };
+
+  update();
+  rateLimitTimer = setInterval(update, 1000);
+}
+
+async function refreshStatus() {
+  state.status = await api("/api/status");
+  renderStatus();
 }
 
 function formatDate(value) {
@@ -97,6 +159,7 @@ function renderStatus() {
     accountControls.hidden = true;
     configStep.hidden = state.status.configured;
     authStep.hidden = !state.status.configured;
+    renderRateLimit({active: false, retry_after: 0});
     return;
   }
 
@@ -109,6 +172,7 @@ function renderStatus() {
   pill.innerHTML = image
     ? `<img src="${escapeHtml(image)}" alt=""><span class="account-name">${escapeHtml(profile.display_name)}</span>`
     : `<span class="account-fallback">${escapeHtml((profile.display_name || "S")[0])}</span><span class="account-name">${escapeHtml(profile.display_name || "Spotify")}</span>`;
+  renderRateLimit();
 }
 
 async function disconnectSpotify() {
@@ -374,6 +438,14 @@ async function scanLibrary() {
     const job = await api("/api/scan", {method: "POST", body: "{}"});
     await followScan(job, {announceResume: false});
   } catch (error) {
+    if (isRateLimitError(error)) {
+      await refreshStatus().catch(() => {});
+      const message = state.status?.rate_limit?.reason === "QUOTA_EXCEEDED"
+        ? "Se alcanzó la cuota de Spotify para apps en desarrollo. El contador indica cuándo podrás volver a analizar."
+        : "Spotify limitó temporalmente las solicitudes. El contador indica cuándo podrás volver a analizar.";
+      toast(message, true);
+      return;
+    }
     toast(error.message, true);
   }
 }
@@ -416,12 +488,14 @@ async function pollScan(job, announceResume) {
     renderScan();
     toast(`Auditoría completa: ${state.scan.summary.total_groups} grupos encontrados.`);
   } catch (error) {
-    const message = /too many requests|\b429\b/i.test(error.message)
-      ? "Spotify limitó temporalmente las solicitudes. El análisis no se completó y los resultados visibles son anteriores. Espera unos minutos antes de intentarlo de nuevo."
+    if (isRateLimitError(error)) await refreshStatus().catch(() => {});
+    const message = isRateLimitError(error)
+      ? "Spotify pidió una pausa breve. El análisis no se completó y los resultados visibles son anteriores; podrás intentarlo de nuevo cuando termine el contador."
       : error.message;
     toast(message, true);
   } finally {
     setBusy(button, false);
+    renderRateLimit();
   }
 }
 

@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from dedupe_engine import detect_duplicates
-from spotify_api import SpotifyClient, SpotifyError, TokenStore, new_oauth_state
+from spotify_api import SpotifyClient, SpotifyError, TokenStore, new_oauth_state, rate_limit_status
 
 
 ROOT = Path(__file__).resolve().parent
@@ -370,12 +370,14 @@ class DedupeHandler(BaseHTTPRequestHandler):
                 profile = json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 profile = None
+        limit_status = rate_limit_status()
         self.send_json(
             {
                 "configured": configured,
                 "authenticated": authenticated,
                 "profile": profile,
                 "profile_refreshing": authenticated and PROFILE_CACHE.is_refreshing(),
+                "rate_limit": limit_status,
                 "auth_error": None,
                 "redirect_uri": REDIRECT_URI,
             }
@@ -421,6 +423,14 @@ class DedupeHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def api_scan(self) -> None:
+        limit_status = rate_limit_status()
+        retry_after = limit_status["retry_after"]
+        if retry_after:
+            raise SpotifyError(
+                f"Spotify limitó temporalmente las solicitudes. Intenta de nuevo en {retry_after} s.",
+                429,
+                {"retry_after": retry_after, "reason": limit_status["reason"]},
+            )
         self.send_json(SCAN_JOB.start(), HTTPStatus.ACCEPTED)
 
     def api_remove(self) -> None:

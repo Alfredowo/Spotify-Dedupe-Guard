@@ -5,8 +5,10 @@ import ctypes
 import ctypes.wintypes
 import hashlib
 import json
+import math
 import os
 import secrets
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -25,6 +27,45 @@ class SpotifyError(RuntimeError):
         super().__init__(message)
         self.status = status
         self.payload = payload
+
+
+class RateLimitState:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._blocked_until = 0.0
+        self._reason: str | None = None
+
+    def block_for(self, seconds: int, reason: str | None = None) -> None:
+        with self._lock:
+            blocked_until = time.monotonic() + max(1, seconds)
+            if blocked_until >= self._blocked_until:
+                self._blocked_until = blocked_until
+                self._reason = reason
+
+    def remaining(self) -> int:
+        with self._lock:
+            return max(0, math.ceil(self._blocked_until - time.monotonic()))
+
+    def status(self) -> dict[str, Any]:
+        with self._lock:
+            remaining = max(0, math.ceil(self._blocked_until - time.monotonic()))
+            return {"active": remaining > 0, "retry_after": remaining, "reason": self._reason if remaining else None}
+
+    def clear(self) -> None:
+        with self._lock:
+            self._blocked_until = 0.0
+            self._reason = None
+
+
+RATE_LIMIT_STATE = RateLimitState()
+
+
+def rate_limit_remaining() -> int:
+    return RATE_LIMIT_STATE.remaining()
+
+
+def rate_limit_status() -> dict[str, Any]:
+    return RATE_LIMIT_STATE.status()
 
 
 class _DataBlob(ctypes.Structure):
@@ -158,8 +199,15 @@ class SpotifyClient:
         *,
         query: dict[str, Any] | None = None,
         body: dict[str, Any] | None = None,
-        max_attempts: int = 6,
     ) -> Any:
+        retry_after = rate_limit_remaining()
+        if retry_after:
+            limit_status = rate_limit_status()
+            raise SpotifyError(
+                f"Spotify limitó temporalmente las solicitudes. Intenta de nuevo en {retry_after} s.",
+                429,
+                {"retry_after": retry_after, "reason": limit_status["reason"]},
+            )
         url = f"{API_BASE}{path}"
         if query:
             url += "?" + urllib.parse.urlencode(query)
@@ -173,47 +221,49 @@ class SpotifyClient:
             },
             method=method,
         )
-        return self._read_json(request, max_attempts=max_attempts)
+        return self._read_json(request)
 
     @staticmethod
-    def _read_json(request: urllib.request.Request, *, max_attempts: int = 6) -> Any:
-        for attempt in range(max_attempts):
+    def _read_json(request: urllib.request.Request) -> Any:
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                raw = response.read()
+                return json.loads(raw) if raw else {}
+        except urllib.error.HTTPError as error:
+            raw = error.read().decode("utf-8", errors="replace")
             try:
-                with urllib.request.urlopen(request, timeout=30) as response:
-                    raw = response.read()
-                    return json.loads(raw) if raw else {}
-            except urllib.error.HTTPError as error:
-                raw = error.read().decode("utf-8", errors="replace")
+                payload = json.loads(raw)
+            except json.JSONDecodeError:
+                payload = raw
+
+            if error.code == 429:
                 try:
-                    payload = json.loads(raw)
-                except json.JSONDecodeError:
-                    payload = raw
+                    retry_after = int(error.headers.get("Retry-After", "1"))
+                except (TypeError, ValueError):
+                    retry_after = 1
+                retry_after = max(1, retry_after)
+                reason = None
+                if isinstance(payload, dict) and isinstance(payload.get("error"), dict):
+                    reason = payload["error"].get("reason")
+                RATE_LIMIT_STATE.block_for(retry_after, reason)
+                endpoint = urllib.parse.urlparse(request.full_url).path
+                print(
+                    f"Spotify respondió 429 en {endpoint}; pausa activa durante {retry_after} s"
+                    f"{f' ({reason})' if reason else ''}.",
+                    flush=True,
+                )
+                if isinstance(payload, dict):
+                    payload = {**payload, "retry_after": retry_after}
 
-                if error.code == 429 and attempt < max_attempts - 1:
-                    try:
-                        retry_after = int(error.headers.get("Retry-After", "1"))
-                    except (TypeError, ValueError):
-                        retry_after = 1
-                    endpoint = urllib.parse.urlparse(request.full_url).path
-                    print(
-                        f"Spotify respondió 429 en {endpoint}; reintentando en "
-                        f"{max(1, min(retry_after, 60))} s (intento {attempt + 1}/{max_attempts}).",
-                        flush=True,
-                    )
-                    time.sleep(max(1, min(retry_after, 60)))
-                    continue
-
-                message = payload.get("error", payload) if isinstance(payload, dict) else payload
-                if isinstance(message, dict):
-                    message = message.get("message") or str(message)
-                raise SpotifyError(str(message), error.code, payload) from error
-            except urllib.error.URLError as error:
-                raise SpotifyError(f"No se pudo conectar con Spotify: {error.reason}", 503) from error
-
-        raise SpotifyError("Spotify mantuvo temporalmente el límite de solicitudes.", 429)
+            message = payload.get("error", payload) if isinstance(payload, dict) else payload
+            if isinstance(message, dict):
+                message = message.get("message") or str(message)
+            raise SpotifyError(str(message), error.code, payload) from error
+        except urllib.error.URLError as error:
+            raise SpotifyError(f"No se pudo conectar con Spotify: {error.reason}", 503) from error
 
     def profile(self) -> dict[str, Any]:
-        return self.request("GET", "/me", max_attempts=1)
+        return self.request("GET", "/me")
 
     def saved_tracks(self) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
