@@ -301,7 +301,7 @@ input:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(91,212,232,.
 .track-row { min-height: 88px; padding: 14px 18px; display: grid; grid-template-columns: 104px minmax(210px, 1.3fr) minmax(150px, .9fr) 110px 120px; gap: 18px; align-items: center; border-bottom: 1px solid rgba(255,255,255,.055); }
 .track-row:last-child { border-bottom: 0; }
 .track-row.keeper { background: linear-gradient(90deg, rgba(98,215,194,.08), transparent 46%); }
-.track-check { width: 18px; height: 18px; margin: 0; flex: 0 0 18px; accent-color: var(--safe); cursor: pointer; }
+.track-check { width: 18px; height: 18px; margin: 0; flex: 0 0 18px; accent-color: var(--coral); cursor: pointer; }
 .row-controls { display: grid; gap: 7px; align-items: center; }
 .keeper-control, .remove-control { margin: 0; display: flex; align-items: center; gap: 7px; color: var(--muted); font-family: var(--mono); font-size: 9px; text-transform: uppercase; cursor: pointer; }
 .keeper-control input, .remove-control input { flex: 0 0 auto; }
