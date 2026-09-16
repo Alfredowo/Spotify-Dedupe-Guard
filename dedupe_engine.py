@@ -55,6 +55,23 @@ def title_family(title: str) -> str:
     return re.sub(r"\s+", " ", value).strip()
 
 
+def _titles_have_generic_suffix(left: str, right: str) -> bool:
+    """Return whether one title is a meaningful word-prefix of the other.
+
+    This deliberately does not try to name every possible edition suffix. The
+    relationship is used only for review candidates, never as proof that two
+    tracks are the same recording.
+    """
+    left_tokens = tuple(normalize(left).split())
+    right_tokens = tuple(normalize(right).split())
+    if len(left_tokens) == len(right_tokens):
+        return False
+    shorter, longer = sorted((left_tokens, right_tokens), key=len)
+    if len(shorter) < 3:
+        return False
+    return longer[: len(shorter)] == shorter
+
+
 def _parse_timestamp(value: str) -> float:
     if not value:
         return 0.0
@@ -186,6 +203,51 @@ def _build_group(tracks: list[SavedTrack], kind: str, confidence: float, reason:
     }
 
 
+def _candidate_components(tracks: list[SavedTrack]) -> list[tuple[list[SavedTrack], bool]]:
+    """Build same-artist components linked by exact families or generic suffixes."""
+    by_artist: dict[str, list[SavedTrack]] = {}
+    for track in tracks:
+        if track.artist_key:
+            by_artist.setdefault(track.artist_key, []).append(track)
+
+    components: list[tuple[list[SavedTrack], bool]] = []
+    for artist_tracks in by_artist.values():
+        if len(artist_tracks) < 2:
+            continue
+        track_by_id = {track.id: track for track in artist_tracks}
+        adjacency = {track.id: set() for track in artist_tracks}
+        suffix_edges: set[frozenset[str]] = set()
+
+        for index, left in enumerate(artist_tracks):
+            for right in artist_tracks[index + 1 :]:
+                same_family = bool(left.family_key and left.family_key == right.family_key)
+                generic_suffix = _titles_have_generic_suffix(left.name, right.name)
+                if not same_family and not generic_suffix:
+                    continue
+                adjacency[left.id].add(right.id)
+                adjacency[right.id].add(left.id)
+                if generic_suffix:
+                    suffix_edges.add(frozenset((left.id, right.id)))
+
+        unseen = set(adjacency)
+        while unseen:
+            start = unseen.pop()
+            component_ids = {start}
+            stack = [start]
+            while stack:
+                current = stack.pop()
+                for neighbor in adjacency[current] & unseen:
+                    unseen.remove(neighbor)
+                    component_ids.add(neighbor)
+                    stack.append(neighbor)
+            if len(component_ids) < 2:
+                continue
+            component_tracks = [track_by_id[track_id] for track_id in component_ids]
+            has_generic_suffix = any(edge <= component_ids for edge in suffix_edges)
+            components.append((component_tracks, has_generic_suffix))
+    return components
+
+
 def detect_duplicates(saved_items: list[dict[str, Any]]) -> dict[str, Any]:
     tracks = [SavedTrack.from_api(item) for item in saved_items]
     tracks = [track for track in tracks if track.id and track.uri]
@@ -231,9 +293,8 @@ def detect_duplicates(saved_items: list[dict[str, Any]]) -> dict[str, Any]:
         if len(candidates) < 2:
             continue
         spread = max(t.duration_ms for t in candidates) - min(t.duration_ms for t in candidates)
-        families = {track.family_key for track in candidates}
         signatures = {track.tags for track in candidates}
-        if spread <= 5_000 and len(families) == 1 and len(signatures) == 1:
+        if spread <= 5_000 and len(signatures) == 1:
             groups.append(
                 _build_group(
                     candidates,
@@ -244,29 +305,40 @@ def detect_duplicates(saved_items: list[dict[str, Any]]) -> dict[str, Any]:
             )
             assigned.update(track.id for track in candidates)
 
-    by_family: dict[tuple[str, str], list[SavedTrack]] = {}
-    for track in tracks:
-        if track.id in assigned or not track.family_key or not track.artist_key:
-            continue
-        by_family.setdefault((track.artist_key, track.family_key), []).append(track)
-
-    for candidates in by_family.values():
+    unassigned = [track for track in tracks if track.id not in assigned]
+    for candidates, has_generic_suffix in _candidate_components(unassigned):
         if len(candidates) < 2:
             continue
+        families = {track.family_key for track in candidates}
         signatures = {track.tags for track in candidates}
         spread = max(t.duration_ms for t in candidates) - min(t.duration_ms for t in candidates)
-        if len(signatures) > 1:
+        if len(families) == 1:
+            if len(signatures) > 1:
+                kind = "version"
+                confidence = 0.62
+                reason = "Misma familia de título, pero las etiquetas de versión no coinciden."
+            elif spread <= 3_000:
+                kind = "probable"
+                confidence = 0.86
+                reason = "Mismo artista, título normalizado, versión y duración casi idéntica."
+            else:
+                kind = "version"
+                confidence = 0.58
+                reason = "Mismo artista y título, pero la duración indica una edición diferente."
+        elif not has_generic_suffix:
+            continue
+        elif len(signatures) > 1:
             kind = "version"
             confidence = 0.62
-            reason = "Misma familia de título, pero las etiquetas de versión no coinciden."
+            reason = "Mismo artista y título base, pero las etiquetas de versión no coinciden."
         elif spread <= 3_000:
             kind = "probable"
-            confidence = 0.86
-            reason = "Mismo artista, título normalizado, versión y duración casi idéntica."
+            confidence = 0.84
+            reason = "Mismo artista y título base; una grabación añade un sufijo y la duración es casi idéntica."
         else:
             kind = "version"
-            confidence = 0.58
-            reason = "Mismo artista y título, pero la duración indica una edición diferente."
+            confidence = 0.56
+            reason = "Mismo artista y título base; el sufijo o la duración indica una edición diferente."
         groups.append(_build_group(candidates, kind, confidence, reason))
 
     order = {"safe": 0, "probable": 1, "version": 2}

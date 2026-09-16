@@ -7,6 +7,7 @@ Aplicación local para encontrar y retirar canciones repetidas de **Tus me gusta
 - Descarga la biblioteca completa mediante la API oficial de Spotify.
 - Marca como **seguro** el mismo ISRC, artista, versión y duración compatible; también reconoce metadatos visibles idénticos con hasta dos segundos de diferencia aunque una reedición tenga otro ISRC.
 - Separa coincidencias por nombre en **probables** y **versiones** para revisión manual.
+- Detecta extensiones y sufijos de título no catalogados mediante similitud estructural, sin retirarlos automáticamente.
 - Recomienda conservar la edición de álbum frente a recopilaciones como `Greatest Hits`, pero permite elegir cualquier copia del grupo.
 - Ofrece crear una playlist privada de respaldo antes de retirar canciones; está activada de forma predeterminada, pero puede omitirse con advertencia explícita.
 - Guarda un historial local y permite deshacer una limpieza.

@@ -46,6 +46,81 @@ class NormalizationTests(unittest.TestCase):
 
 
 class DetectorTests(unittest.TestCase):
+    def test_same_isrc_allows_unlisted_title_suffix(self):
+        items = [
+            saved(
+                "base",
+                title="You Make My Dreams",
+                artist="Daryl Hall & John Oates",
+                album="Soundtrack",
+                isrc="SAME",
+                duration=191_000,
+            ),
+            saved(
+                "variant",
+                title="You Make My Dreams (Come True)",
+                artist="Daryl Hall & John Oates",
+                album="The Essential",
+                isrc="SAME",
+                duration=191_000,
+            ),
+        ]
+        result = detect_duplicates(items)
+        self.assertEqual(result["summary"]["safe"], 1)
+
+    def test_unlisted_title_suffix_is_probable_when_duration_matches(self):
+        items = [
+            saved(
+                "base",
+                title="You Make My Dreams",
+                artist="Daryl Hall & John Oates",
+                album="Soundtrack",
+                isrc="A",
+                duration=191_000,
+            ),
+            saved(
+                "variant",
+                title="You Make My Dreams (Come True)",
+                artist="Daryl Hall & John Oates",
+                album="The Essential",
+                isrc="B",
+                duration=191_000,
+            ),
+        ]
+        result = detect_duplicates(items)
+        self.assertEqual(result["summary"]["probable"], 1)
+        self.assertEqual(result["groups"][0]["kind"], "probable")
+
+    def test_unlisted_trailing_suffix_with_large_duration_difference_is_version(self):
+        items = [
+            saved(
+                "base",
+                title="You're My Heart, You're My Soul",
+                artist="Modern Talking",
+                isrc="A",
+                duration=335_000,
+            ),
+            saved(
+                "variant",
+                title="You're My Heart, You're My Soul '98",
+                artist="Modern Talking",
+                album="Back For Good/2nd",
+                isrc="B",
+                duration=230_000,
+            ),
+        ]
+        result = detect_duplicates(items)
+        self.assertEqual(result["summary"]["version"], 1)
+        self.assertEqual(result["summary"]["removable_safe"], 0)
+
+    def test_short_title_prefix_is_not_generic_suffix_match(self):
+        items = [
+            saved("one", title="The End", isrc="A"),
+            saved("two", title="The End Of The World", isrc="B"),
+        ]
+        result = detect_duplicates(items)
+        self.assertEqual(result["summary"]["total_groups"], 0)
+
     def test_same_isrc_is_safe_and_prefers_original_album(self):
         items = [
             saved("original", album="5", album_type="album", added="2026-08-06T00:00:00Z"),
