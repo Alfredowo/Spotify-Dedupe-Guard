@@ -57,6 +57,7 @@ function toast(message, error = false) {
 function setBusy(button, busy, busyText = "Procesando…") {
   if (!button.dataset.label) button.dataset.label = button.textContent.trim();
   button.disabled = busy;
+  button.setAttribute("aria-busy", busy ? "true" : "false");
   button.classList.toggle("loading", busy);
   button.lastChild.textContent = busy ? ` ${busyText}` : ` ${button.dataset.label}`;
 }
