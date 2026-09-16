@@ -216,7 +216,7 @@ input:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(91,212,232,.
 .text-button:hover:not(:disabled) { color: #b7f3fb; }
 #change-client { margin-top: 18px; }
 
-.dashboard { padding-top: 64px; }
+.dashboard { padding-top: 48px; }
 .dashboard-head { display: flex; align-items: end; justify-content: space-between; gap: 40px; }
 .dashboard-head h1 { margin-bottom: 0; font-size: clamp(54px, 7vw, 108px); }
 .dashboard-head h1 span { color: transparent; -webkit-text-stroke: 1px var(--violet); }

@@ -615,6 +615,15 @@ $$(".filter").forEach(button => button.addEventListener("click", () => {
   renderGroups();
 }));
 
+function closeOnBackdropClick(dialog) {
+  dialog.addEventListener("click", event => {
+    if (event.target === dialog) dialog.close("cancel");
+  });
+}
+
+closeOnBackdropClick($("#confirm-dialog"));
+closeOnBackdropClick($("#undo-dialog"));
+
 $("#remove-button").addEventListener("click", () => {
   const withBackup = $("#create-backup").checked;
   $("#confirm-count").textContent = state.selected.size;
