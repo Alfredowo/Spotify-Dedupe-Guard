@@ -157,6 +157,21 @@
     </form>
   </dialog>
 
+  <dialog id="undo-dialog" class="confirm-dialog undo-dialog" aria-labelledby="undo-dialog-title" aria-describedby="undo-dialog-copy">
+    <form method="dialog">
+      <button class="dialog-close" type="submit" value="cancel" aria-label="Cerrar">×</button>
+      <span class="step-label">Restaurar limpieza</span>
+      <h2 id="undo-dialog-title">Restaurar <span id="undo-count">0</span> canciones</h2>
+      <p id="undo-dialog-copy">Las canciones de esta limpieza volverán a aparecer en “Tus me gusta” de Spotify.</p>
+      <div class="undo-note"><b>Se restaurará el lote completo</b><span>La acción solo afecta las canciones incluidas en este registro.</span></div>
+      <label class="confirm-check undo-check"><input id="undo-checkbox" type="checkbox"> <span>Entiendo que esta acción modifica mi biblioteca.</span></label>
+      <div class="dialog-actions">
+        <button class="button ghost" type="submit" value="cancel">Cancelar</button>
+        <button id="confirm-undo" class="button primary" value="default" type="button" disabled>Restaurar canciones</button>
+      </div>
+    </form>
+  </dialog>
+
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="/app.js" defer></script>
 </body>

@@ -430,6 +430,11 @@ input:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(91,212,232,.
 .dialog-close { position: absolute; right: 18px; top: 13px; color: var(--muted); background: none; border: 0; font-size: 28px; cursor: pointer; }
 .confirm-check { margin: 26px 0; padding: 15px; color: var(--text); background: var(--ink-2); border: 1px solid var(--line); cursor: pointer; }
 .confirm-check input { margin-right: 8px; accent-color: var(--coral); }
+.undo-dialog { border-color: rgba(91,212,232,.55); }
+.undo-check input { accent-color: var(--safe); }
+.undo-note { margin: 22px 0 0; padding: 15px; color: var(--safe); background: rgba(91,212,232,.08); border: 1px solid rgba(91,212,232,.35); }
+.undo-note b, .undo-note span { display: block; }
+.undo-note span { margin-top: 4px; color: var(--text); font-size: 12px; }
 .no-backup-warning { margin: 22px 0 0; padding: 15px; color: var(--coral); background: rgba(255,125,120,.08); border: 1px solid rgba(255,125,120,.45); }
 .no-backup-warning b, .no-backup-warning span { display: block; }
 .no-backup-warning span { margin-top: 4px; color: var(--text); font-size: 12px; }

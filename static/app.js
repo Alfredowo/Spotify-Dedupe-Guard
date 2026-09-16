@@ -10,6 +10,7 @@ const state = {
 
 let scanPollPromise = null;
 let rateLimitTimer = null;
+let pendingUndoActionId = null;
 const TOAST_DURATION_MS = 4200;
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -428,9 +429,9 @@ function renderHistory() {
     <div class="history-row">
       <div><b>${item.action === "remove" ? "Duplicados retirados" : "Limpieza restaurada"}</b><small>${formatDateTime(item.created_at)}</small></div>
       <span class="history-count">${item.count} canciones</span>
-      ${item.can_undo ? `<button class="text-button undo-button" data-action-id="${item.id}" type="button">Deshacer</button>` : "<span></span>"}
+      ${item.can_undo ? `<button class="text-button undo-button" data-action-id="${item.id}" data-action-count="${item.count}" type="button">Deshacer</button>` : "<span></span>"}
     </div>`).join("");
-  $$(".undo-button").forEach(button => button.addEventListener("click", () => undoAction(button)));
+  $$(".undo-button").forEach(button => button.addEventListener("click", () => openUndoDialog(button)));
 }
 
 async function scanLibrary() {
@@ -529,21 +530,34 @@ async function removeSelected() {
   }
 }
 
-async function undoAction(button) {
+function openUndoDialog(button) {
+  pendingUndoActionId = Number(button.dataset.actionId);
+  $("#undo-count").textContent = button.dataset.actionCount;
+  $("#undo-checkbox").checked = false;
+  $("#confirm-undo").disabled = true;
+  $("#undo-dialog").showModal();
+}
+
+async function undoAction() {
+  const button = $("#confirm-undo");
+  const actionId = pendingUndoActionId;
+  if (!Number.isInteger(actionId)) return;
+
   button.disabled = true;
   button.textContent = "Restaurando…";
   try {
     const payload = await api("/api/undo", {
       method: "POST",
       headers: {"X-Dedupe-Intent": "confirmed"},
-      body: JSON.stringify({action_id: Number(button.dataset.actionId)}),
+      body: JSON.stringify({action_id: actionId}),
     });
+    $("#undo-dialog").close();
     await loadHistory();
     toast(`${payload.restored} canciones restauradas en Tus me gusta.`);
   } catch (error) {
     toast(error.message, true);
     button.disabled = false;
-    button.textContent = "Deshacer";
+    button.textContent = "Restaurar canciones";
   }
 }
 
@@ -620,5 +634,15 @@ $("#confirm-checkbox").addEventListener("change", event => {
   $("#confirm-remove").disabled = !event.currentTarget.checked;
 });
 $("#confirm-remove").addEventListener("click", removeSelected);
+$("#undo-checkbox").addEventListener("change", event => {
+  $("#confirm-undo").disabled = !event.currentTarget.checked;
+});
+$("#confirm-undo").addEventListener("click", undoAction);
+$("#undo-dialog").addEventListener("close", () => {
+  pendingUndoActionId = null;
+  $("#undo-checkbox").checked = false;
+  $("#confirm-undo").disabled = true;
+  $("#confirm-undo").textContent = "Restaurar canciones";
+});
 
 boot().finally(setupGroupsToolbar);
