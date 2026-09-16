@@ -54,12 +54,21 @@ function toast(message, error = false) {
   toast.timer = setTimeout(() => element.className = "toast", TOAST_DURATION_MS);
 }
 
-function setBusy(button, busy, busyText = "Procesando…") {
+function setScanButtonState(status) {
+  const button = $("#scan-button");
   if (!button.dataset.label) button.dataset.label = button.textContent.trim();
-  button.disabled = busy;
+  const labels = {
+    starting: "Iniciando análisis…",
+    running: "Cancelar análisis",
+    cancelling: "Cancelando análisis…",
+  };
+  const busy = status !== "idle";
+  button.dataset.scanState = status;
+  button.disabled = status === "starting" || status === "cancelling";
   button.setAttribute("aria-busy", busy ? "true" : "false");
   button.classList.toggle("loading", busy);
-  button.lastChild.textContent = busy ? ` ${busyText}` : ` ${button.dataset.label}`;
+  button.classList.toggle("cancelling", status === "cancelling");
+  button.lastChild.textContent = ` ${labels[status] || button.dataset.label}`;
 }
 
 function formatDuration(ms) {
@@ -90,7 +99,7 @@ function renderRateLimit(rateLimit = state.status?.rate_limit) {
   let remaining = Number(rateLimit?.retry_after || 0);
   if (!rateLimit?.active || remaining <= 0) {
     note.hidden = true;
-    if (!button.classList.contains("loading")) button.disabled = false;
+    if (!["starting", "cancelling"].includes(button.dataset.scanState)) button.disabled = false;
     return;
   }
 
@@ -103,10 +112,10 @@ function renderRateLimit(rateLimit = state.status?.rate_limit) {
       rateLimitTimer = null;
       if (state.status?.rate_limit) state.status.rate_limit.active = false;
       note.hidden = true;
-      if (!button.classList.contains("loading")) button.disabled = false;
+      if (!["starting", "cancelling"].includes(button.dataset.scanState)) button.disabled = false;
       return;
     }
-    button.disabled = true;
+    button.disabled = button.dataset.scanState !== "running";
     note.hidden = false;
     const explanation = rateLimit?.reason === "QUOTA_EXCEEDED"
       ? "Se alcanzó la cuota de Spotify para apps en desarrollo."
@@ -436,8 +445,11 @@ function renderHistory() {
 }
 
 async function scanLibrary() {
+  setScanButtonState("starting");
+  let jobAccepted = false;
   try {
     const job = await api("/api/scan", {method: "POST", body: "{}"});
+    jobAccepted = true;
     await followScan(job, {announceResume: false});
   } catch (error) {
     if (isRateLimitError(error)) {
@@ -449,6 +461,11 @@ async function scanLibrary() {
       return;
     }
     toast(error.message, true);
+  } finally {
+    if (!jobAccepted) {
+      setScanButtonState("idle");
+      renderRateLimit();
+    }
   }
 }
 
@@ -459,7 +476,7 @@ function delay(ms) {
 async function resumeScan() {
   try {
     const job = await api("/api/scan/status");
-    if (job.status === "running") await followScan(job, {announceResume: true});
+    if (["running", "cancelling"].includes(job.status)) await followScan(job, {announceResume: true});
   } catch (error) {
     toast(error.message, true);
   }
@@ -475,12 +492,20 @@ function followScan(job, {announceResume = false} = {}) {
 
 async function pollScan(job, announceResume) {
   const button = $("#scan-button");
-  setBusy(button, true, "Leyendo canciones…");
-  if (announceResume) toast("El análisis sigue en curso. Retomando la actualización…");
+  setScanButtonState(job.status === "cancelling" ? "cancelling" : "running");
+  if (announceResume) {
+    toast(job.status === "cancelling"
+      ? "La cancelación sigue en curso. Retomando la actualización…"
+      : "El análisis sigue en curso. Retomando la actualización…");
+  }
   try {
-    while (job.status === "running") {
+    while (["running", "cancelling"].includes(job.status)) {
       await delay(900);
       job = await api("/api/scan/status");
+    }
+    if (job.status === "cancelled") {
+      toast("Análisis cancelado. No se guardaron resultados nuevos.");
+      return;
     }
     if (job.status === "failed") throw new Error(job.error || "El análisis no pudo completarse.");
     if (job.status !== "completed") return;
@@ -496,8 +521,22 @@ async function pollScan(job, announceResume) {
       : error.message;
     toast(message, true);
   } finally {
-    setBusy(button, false);
+    setScanButtonState("idle");
     renderRateLimit();
+  }
+}
+
+async function cancelScan() {
+  const button = $("#scan-button");
+  if (button.dataset.scanState !== "running") return;
+
+  setScanButtonState("cancelling");
+  try {
+    const job = await api("/api/scan/cancel", {method: "POST", body: "{}"});
+    if (!scanPollPromise) await followScan(job);
+  } catch (error) {
+    setScanButtonState("running");
+    toast(error.message, true);
   }
 }
 
@@ -588,7 +627,13 @@ $("#change-client").addEventListener("click", () => {
   renderStatus();
 });
 
-$("#scan-button").addEventListener("click", scanLibrary);
+$("#scan-button").addEventListener("click", () => {
+  if ($("#scan-button").dataset.scanState === "running") {
+    void cancelScan();
+    return;
+  }
+  void scanLibrary();
+});
 $("#disconnect-button").addEventListener("click", disconnectSpotify);
 let searchTimer;
 $("#track-search").addEventListener("input", event => {

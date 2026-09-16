@@ -34,9 +34,12 @@ REDIRECT_URI = f"http://{HOST}:{PORT}/callback"
 class ScanJob:
     """Keeps a library scan alive independently from the browser request."""
 
+    ACTIVE_STATUSES = {"running", "cancelling"}
+
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._state: dict[str, Any] = {"status": "idle"}
+        self._cancel_event: threading.Event | None = None
 
     def status(self) -> dict[str, Any]:
         with self._lock:
@@ -44,40 +47,80 @@ class ScanJob:
 
     def start(self) -> dict[str, Any]:
         with self._lock:
-            if self._state.get("status") == "running":
+            if self._state.get("status") in self.ACTIVE_STATUSES:
                 return dict(self._state)
-            self._state = {"status": "running", "started_at": utc_now()}
-            thread = threading.Thread(target=self._run, daemon=True, name="spotify-library-scan")
+            started_at = utc_now()
+            cancel_event = threading.Event()
+            self._cancel_event = cancel_event
+            self._state = {"status": "running", "started_at": started_at}
+            thread = threading.Thread(
+                target=self._run,
+                args=(cancel_event, started_at),
+                daemon=True,
+                name="spotify-library-scan",
+            )
             thread.start()
             return dict(self._state)
 
-    def _run(self) -> None:
+    def cancel(self) -> dict[str, Any]:
+        with self._lock:
+            if self._state.get("status") not in self.ACTIVE_STATUSES:
+                return dict(self._state)
+            if self._cancel_event is not None:
+                self._cancel_event.set()
+            if self._state.get("status") == "running":
+                self._state = {**self._state, "status": "cancelling"}
+            return dict(self._state)
+
+    def _run(self, cancel_event: threading.Event, started_at: str) -> None:
         try:
-            items = spotify_client().saved_tracks()
-            print(f"Spotify devolvió {len(items)} canciones guardadas.", flush=True)
-            result = detect_duplicates(items)
-            scan_id = store_scan(result)
-            total_groups = result.get("summary", {}).get("total_groups", "desconocidos")
-            print(
-                f"Auditoría {scan_id} completada: {total_groups} grupos.",
-                flush=True,
-            )
-            state = {
-                "status": "completed",
-                "started_at": self.status().get("started_at"),
-                "finished_at": utc_now(),
-                "scan_id": scan_id,
-            }
+            items = spotify_client().saved_tracks(cancel_event=cancel_event)
+            if cancel_event.is_set():
+                state = self._cancelled_state(started_at)
+            else:
+                print(f"Spotify devolvió {len(items)} canciones guardadas.", flush=True)
+                result = detect_duplicates(items)
+                if cancel_event.is_set():
+                    state = self._cancelled_state(started_at)
+                else:
+                    scan_id = store_scan(result)
+                    if cancel_event.is_set():
+                        invalidate_scan(scan_id)
+                        state = self._cancelled_state(started_at)
+                    else:
+                        total_groups = result.get("summary", {}).get("total_groups", "desconocidos")
+                        print(
+                            f"Auditoría {scan_id} completada: {total_groups} grupos.",
+                            flush=True,
+                        )
+                        state = {
+                            "status": "completed",
+                            "started_at": started_at,
+                            "finished_at": utc_now(),
+                            "scan_id": scan_id,
+                        }
         except Exception as error:
-            print(f"El análisis falló: {error!r}", flush=True)
-            state = {
-                "status": "failed",
-                "started_at": self.status().get("started_at"),
-                "finished_at": utc_now(),
-                "error": str(error) or "La operación no pudo completarse.",
-            }
+            if cancel_event.is_set():
+                state = self._cancelled_state(started_at)
+            else:
+                print(f"El análisis falló: {error!r}", flush=True)
+                state = {
+                    "status": "failed",
+                    "started_at": started_at,
+                    "finished_at": utc_now(),
+                    "error": str(error) or "La operación no pudo completarse.",
+                }
         with self._lock:
             self._state = state
+            self._cancel_event = None
+
+    @staticmethod
+    def _cancelled_state(started_at: str) -> dict[str, Any]:
+        return {
+            "status": "cancelled",
+            "started_at": started_at,
+            "finished_at": utc_now(),
+        }
 
 
 SCAN_JOB = ScanJob()
@@ -349,6 +392,8 @@ class DedupeHandler(BaseHTTPRequestHandler):
                 self.send_json({"ok": True})
             elif parsed.path == "/api/scan":
                 self.api_scan()
+            elif parsed.path == "/api/scan/cancel":
+                self.api_scan_cancel()
             elif parsed.path == "/api/remove":
                 self.require_intent()
                 self.api_remove()
@@ -432,6 +477,9 @@ class DedupeHandler(BaseHTTPRequestHandler):
                 {"retry_after": retry_after, "reason": limit_status["reason"]},
             )
         self.send_json(SCAN_JOB.start(), HTTPStatus.ACCEPTED)
+
+    def api_scan_cancel(self) -> None:
+        self.send_json(SCAN_JOB.cancel(), HTTPStatus.ACCEPTED)
 
     def api_remove(self) -> None:
         payload = self.body_json()

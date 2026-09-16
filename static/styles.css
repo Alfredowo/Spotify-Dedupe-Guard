@@ -226,9 +226,13 @@ input:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(91,212,232,.
 .scan { color: var(--text); background: var(--panel-2); border-color: var(--line); }
 .scan, .danger { border-radius: 6px; }
 .scan:hover:not(:disabled) { color: var(--cyan); background: #24324b; border-color: var(--cyan); }
+.scan[data-scan-state="running"] { color: var(--coral); border-color: rgba(255,125,120,.55); }
+.scan[data-scan-state="running"]:hover:not(:disabled) { color: #ffb0aa; background: rgba(255,125,120,.10); border-color: var(--coral); }
+.scan.cancelling { color: var(--amber); border-color: rgba(241,198,106,.55); }
 .scan-disc { width: 18px; height: 18px; display: block; flex: 0 0 18px; border: 3px solid rgba(91,212,232,.2); border-top-color: var(--cyan); border-right-color: var(--violet); border-radius: 50%; }
 .scan.loading .scan-disc { animation: spin 1s linear infinite; }
-.scan.loading { cursor: progress; }
+.scan.loading { cursor: wait; }
+.scan[data-scan-state="running"] { cursor: pointer; }
 
 .empty-state { margin: 72px auto; max-width: 590px; padding: 58px 30px; text-align: center; border: 1px dashed var(--line); }
 .empty-state h2 { font-family: var(--display); font-size: 28px; }

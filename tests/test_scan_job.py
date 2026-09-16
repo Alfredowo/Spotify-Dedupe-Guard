@@ -11,7 +11,7 @@ class ScanJobTests(unittest.TestCase):
         scan_started = threading.Event()
 
         class FakeClient:
-            def saved_tracks(self):
+            def saved_tracks(self, cancel_event=None):
                 scan_started.set()
                 release_scan.wait(timeout=2)
                 return [{"track": {"id": "one"}}]
@@ -39,7 +39,7 @@ class ScanJobTests(unittest.TestCase):
         release_scan = threading.Event()
 
         class FakeClient:
-            def saved_tracks(self):
+            def saved_tracks(self, cancel_event=None):
                 release_scan.wait(timeout=2)
                 return []
 
@@ -60,9 +60,37 @@ class ScanJobTests(unittest.TestCase):
 
         self.assertEqual(job.status()["status"], "completed")
 
+    def test_cancel_stops_scan_without_persisting_results(self):
+        scan_started = threading.Event()
+
+        class FakeClient:
+            def saved_tracks(self, cancel_event=None):
+                scan_started.set()
+                while cancel_event is None or not cancel_event.is_set():
+                    threading.Event().wait(0.01)
+                return [{"track": {"id": "one"}}]
+
+        job = ScanJob()
+        with (
+            patch("app.spotify_client", return_value=FakeClient()),
+            patch("app.detect_duplicates") as detect_duplicates,
+            patch("app.store_scan") as store_scan,
+        ):
+            job.start()
+            self.assertTrue(scan_started.wait(timeout=1))
+            self.assertEqual(job.cancel()["status"], "cancelling")
+            for _ in range(100):
+                if job.status()["status"] not in ScanJob.ACTIVE_STATUSES:
+                    break
+                threading.Event().wait(0.01)
+
+        self.assertEqual(job.status()["status"], "cancelled")
+        detect_duplicates.assert_not_called()
+        store_scan.assert_not_called()
+
     def test_scan_failure_is_available_to_a_reloaded_page(self):
         class FakeClient:
-            def saved_tracks(self):
+            def saved_tracks(self, cancel_event=None):
                 raise RuntimeError("Spotify no respondió")
 
         job = ScanJob()

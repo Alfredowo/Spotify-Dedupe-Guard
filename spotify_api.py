@@ -265,13 +265,17 @@ class SpotifyClient:
     def profile(self) -> dict[str, Any]:
         return self.request("GET", "/me")
 
-    def saved_tracks(self) -> list[dict[str, Any]]:
+    def saved_tracks(self, cancel_event: threading.Event | None = None) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
         offset = 0
         while True:
+            if cancel_event is not None and cancel_event.is_set():
+                break
             page = self.request("GET", "/me/tracks", query={"limit": 50, "offset": offset})
             batch = page.get("items") or []
             items.extend(batch)
+            if cancel_event is not None and cancel_event.is_set():
+                break
             if not page.get("next") or not batch:
                 break
             offset += len(batch)
