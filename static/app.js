@@ -11,10 +11,17 @@ const state = {
 let scanPollPromise = null;
 let rateLimitTimer = null;
 let pendingUndoActionId = null;
+let toastTimer = null;
+let toastDeadline = 0;
+let toastRemainingMs = 0;
+let toastPaused = false;
 const TOAST_DURATION_MS = 4200;
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+
+$("#toast").addEventListener("mouseenter", pauseToast);
+$("#toast").addEventListener("mouseleave", resumeToast);
 
 function escapeHtml(value = "") {
   return String(value).replace(/[&<>'"]/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[char]));
@@ -45,13 +52,43 @@ async function api(path, options = {}) {
 
 function toast(message, error = false) {
   const element = $("#toast");
+  clearTimeout(toastTimer);
+  toastRemainingMs = TOAST_DURATION_MS;
+  toastPaused = element.matches(":hover");
   element.textContent = message;
   element.style.setProperty("--toast-duration", `${TOAST_DURATION_MS}ms`);
   element.className = "toast";
   void element.offsetWidth;
   element.className = `toast show${error ? " error" : ""}`;
-  clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => element.className = "toast", TOAST_DURATION_MS);
+  if (!toastPaused) startToastTimer();
+}
+
+function startToastTimer() {
+  toastDeadline = Date.now() + toastRemainingMs;
+  toastTimer = setTimeout(() => {
+    $("#toast").className = "toast";
+    toastTimer = null;
+    toastPaused = false;
+  }, toastRemainingMs);
+}
+
+function pauseToast() {
+  const element = $("#toast");
+  if (!element.classList.contains("show") || toastPaused) return;
+  toastPaused = true;
+  toastRemainingMs = Math.max(0, toastDeadline - Date.now());
+  clearTimeout(toastTimer);
+  toastTimer = null;
+}
+
+function resumeToast() {
+  if (!toastPaused) return;
+  toastPaused = false;
+  if (toastRemainingMs <= 0) {
+    $("#toast").className = "toast";
+    return;
+  }
+  startToastTimer();
 }
 
 function setScanButtonState(status) {
