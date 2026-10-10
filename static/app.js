@@ -228,7 +228,10 @@ async function loadLatestScan({resetSelection = true} = {}) {
   if (payload.scan) {
     state.scan = payload.scan;
     state.keepers = new Map(state.scan.groups.map(group => [group.id, group.keeper.id]));
-    if (resetSelection) selectSafe();
+    if (resetSelection) {
+      state.selected.clear();
+      if (!state.scan.updated_at) selectSafe();
+    }
     renderScan();
   }
 }
@@ -276,7 +279,9 @@ function renderScan() {
   if (!scan) return;
   $("#empty-state").hidden = true;
   $("#results").hidden = false;
-  $("#last-scan").textContent = `Última auditoría · ${formatDateTime(scan.created_at)}`;
+  $("#last-scan").textContent = scan.updated_at
+    ? `Auditoría actualizada · ${formatDateTime(scan.updated_at)}`
+    : `Última auditoría · ${formatDateTime(scan.created_at)}`;
   $("#total-tracks").textContent = scan.total_tracks.toLocaleString("es-MX");
   $("#safe-count").textContent = (scan.summary.removable_safe ?? removableCount("safe")).toLocaleString("es-MX");
   $("#probable-count").textContent = (scan.summary.removable_probable ?? removableCount("probable")).toLocaleString("es-MX");
@@ -287,18 +292,6 @@ function renderScan() {
   $("#filter-version").textContent = scan.summary.version;
   renderGroups();
   renderSelection();
-}
-
-function clearStaleScan() {
-  state.scan = null;
-  state.selected.clear();
-  state.keepers.clear();
-  $("#results").hidden = true;
-  const emptyState = $("#empty-state");
-  emptyState.hidden = false;
-  $("h2", emptyState).textContent = "Tu biblioteca ya cambió";
-  $("p", emptyState).textContent = "Los resultados anteriores se retiraron para evitar acciones duplicadas. Ejecuta una auditoría nueva para revisar el estado actual.";
-  $("#last-scan").textContent = "Biblioteca actualizada · Falta una auditoría nueva.";
 }
 
 function kindLabel(kind) {
@@ -556,11 +549,20 @@ async function removeSelected() {
       }),
     });
     $("#confirm-dialog").close();
-    clearStaleScan();
+    state.scan = payload.scan;
+    state.keepers = new Map(state.scan.groups.map(group => [group.id, group.keeper.id]));
+    state.selected.clear();
+    renderScan();
     await loadHistory();
+    const remaining = state.scan.summary.total_removable;
+    const pendingMessage = remaining === 0
+      ? "No quedan duplicados pendientes."
+      : remaining === 1
+      ? "Queda 1 duplicado pendiente."
+      : `Quedan ${remaining} duplicados pendientes.`;
     toast(payload.created_backup
-      ? `${payload.removed} duplicados retirados. El respaldo quedó en Spotify.`
-      : `${payload.removed} duplicados retirados sin crear playlist de respaldo.`);
+      ? `${payload.removed} duplicados retirados. El respaldo quedó en Spotify. ${pendingMessage}`
+      : `${payload.removed} duplicados retirados sin crear playlist de respaldo. ${pendingMessage}`);
   } catch (error) {
     toast(error.message, true);
   } finally {
@@ -592,6 +594,12 @@ async function undoAction() {
       body: JSON.stringify({action_id: actionId}),
     });
     $("#undo-dialog").close();
+    if (payload.scan && state.scan?.scan_id === payload.scan.scan_id) {
+      state.scan = payload.scan;
+      state.keepers = new Map(state.scan.groups.map(group => [group.id, group.keeper.id]));
+      state.selected.clear();
+      renderScan();
+    }
     await loadHistory();
     toast(`${payload.restored} canciones restauradas en Tus me gusta.`);
   } catch (error) {

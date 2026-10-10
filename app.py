@@ -124,6 +124,7 @@ class ScanJob:
 
 
 SCAN_JOB = ScanJob()
+SCAN_MUTATION_LOCK = threading.Lock()
 
 
 def utc_now() -> str:
@@ -239,12 +240,70 @@ def database() -> Iterator[sqlite3.Connection]:
 
 
 def store_scan(result: dict[str, Any]) -> int:
+    stored_result = dict(result)
+    stored_result["_dedupe_state"] = {"removed_track_ids": [], "keepers": {}}
     with database() as db:
         cursor = db.execute(
             "INSERT INTO scans(created_at, total_tracks, result_json) VALUES (?, ?, ?)",
-            (utc_now(), result["total_tracks"], json.dumps(result, ensure_ascii=False)),
+            (utc_now(), result["total_tracks"], json.dumps(stored_result, ensure_ascii=False)),
         )
         return int(cursor.lastrowid)
+
+
+def _scan_view(result: dict[str, Any], scan_id: int, created_at: str) -> dict[str, Any]:
+    state = result.get("_dedupe_state") or {}
+    removed_ids = {str(track_id) for track_id in state.get("removed_track_ids", [])}
+    keeper_choices = state.get("keepers") or {}
+    groups = []
+
+    for source_group in result.get("groups", []):
+        tracks = [source_group["keeper"], *source_group.get("remove", [])]
+        remaining_tracks = [track for track in tracks if str(track.get("id")) not in removed_ids]
+        if len(remaining_tracks) < 2:
+            continue
+
+        chosen_id = str(keeper_choices.get(source_group["id"]) or source_group["keeper"]["id"])
+        keeper = next((track for track in remaining_tracks if str(track["id"]) == chosen_id), None)
+        if keeper is None:
+            keeper = remaining_tracks[0]
+        groups.append({
+            **source_group,
+            "keeper": keeper,
+            "remove": [track for track in remaining_tracks if track["id"] != keeper["id"]],
+        })
+
+    group_counts = {
+        kind: sum(group["kind"] == kind for group in groups)
+        for kind in ("safe", "probable", "version")
+    }
+    removable_counts = {
+        kind: sum(len(group["remove"]) for group in groups if group["kind"] == kind)
+        for kind in group_counts
+    }
+    summary = {
+        **(result.get("summary") or {}),
+        **group_counts,
+        "removable_safe": removable_counts["safe"],
+        "removable_probable": removable_counts["probable"],
+        "removable_version": removable_counts["version"],
+        "total_groups": len(groups),
+        "total_removable": sum(removable_counts.values()),
+    }
+    view = {
+        key: value
+        for key, value in result.items()
+        if key not in {"_dedupe_state", "_updated_at", "groups", "summary"}
+    }
+    view.update({
+        "total_tracks": max(0, int(result.get("total_tracks", 0)) - len(removed_ids)),
+        "groups": groups,
+        "summary": summary,
+        "scan_id": scan_id,
+        "created_at": created_at,
+    })
+    if result.get("_updated_at"):
+        view["updated_at"] = result["_updated_at"]
+    return view
 
 
 def get_scan(scan_id: int | None = None) -> dict[str, Any] | None:
@@ -259,9 +318,92 @@ def get_scan(scan_id: int | None = None) -> dict[str, Any] | None:
     if not row or invalidated:
         return None
     result = json.loads(row["result_json"])
-    result["scan_id"] = row["id"]
-    result["created_at"] = row["created_at"]
-    return result
+    return _scan_view(result, row["id"], row["created_at"])
+
+
+def record_remove_and_update_scan(
+    scan_id: int,
+    action_payload: dict[str, Any],
+    backup_playlist_id: str | None,
+) -> tuple[int, dict[str, Any]]:
+    removed_ids = {str(track["id"]) for track in action_payload["tracks"]}
+    with database() as db:
+        row = db.execute("SELECT * FROM scans WHERE id = ?", (scan_id,)).fetchone()
+        invalidated = row and db.execute(
+            "SELECT 1 FROM invalidated_scans WHERE scan_id = ?", (scan_id,)
+        ).fetchone()
+        if not row or invalidated:
+            raise ValueError("La auditoría ya no está disponible. Ejecuta una nueva.")
+
+        result = json.loads(row["result_json"])
+        state = result.get("_dedupe_state") or {"removed_track_ids": [], "keepers": {}}
+        already_removed = {str(track_id) for track_id in state.get("removed_track_ids", [])}
+        if removed_ids & already_removed:
+            raise ValueError("Algunas canciones ya fueron retiradas. Actualiza los resultados.")
+        keeper_choices = {
+            str(group_id): str(keeper_id)
+            for group_id, keeper_id in (action_payload.get("keepers") or {}).items()
+        }
+        state["removed_track_ids"] = sorted(already_removed | removed_ids)
+        state["keepers"] = {**(state.get("keepers") or {}), **keeper_choices}
+        result["_dedupe_state"] = state
+        result["_updated_at"] = utc_now()
+        db.execute(
+            "UPDATE scans SET total_tracks = ?, result_json = ? WHERE id = ?",
+            (
+                max(0, int(result.get("total_tracks", row["total_tracks"])) - len(state["removed_track_ids"])),
+                json.dumps(result, ensure_ascii=False),
+                scan_id,
+            ),
+        )
+        cursor = db.execute(
+            """INSERT INTO actions(created_at, action, payload_json, backup_playlist_id, related_action_id)
+               VALUES (?, 'remove', ?, ?, NULL)""",
+            (utc_now(), json.dumps(action_payload, ensure_ascii=False), backup_playlist_id),
+        )
+        return int(cursor.lastrowid), _scan_view(result, row["id"], row["created_at"])
+
+
+def record_undo_and_update_scan(
+    action_id: int,
+    scan_id: int | None,
+    tracks: list[dict[str, Any]],
+) -> tuple[int, dict[str, Any] | None]:
+    restored_ids = {str(track["id"]) for track in tracks}
+    updated_scan = None
+    with database() as db:
+        if scan_id is not None:
+            row = db.execute("SELECT * FROM scans WHERE id = ?", (scan_id,)).fetchone()
+            invalidated = row and db.execute(
+                "SELECT 1 FROM invalidated_scans WHERE scan_id = ?", (scan_id,)
+            ).fetchone()
+            if row and not invalidated:
+                result = json.loads(row["result_json"])
+                state = result.get("_dedupe_state") or {"removed_track_ids": [], "keepers": {}}
+                removed_ids = {str(track_id) for track_id in state.get("removed_track_ids", [])}
+                state["removed_track_ids"] = sorted(removed_ids - restored_ids)
+                result["_dedupe_state"] = state
+                result["_updated_at"] = utc_now()
+                db.execute(
+                    "UPDATE scans SET total_tracks = ?, result_json = ? WHERE id = ?",
+                    (
+                        max(0, int(result.get("total_tracks", row["total_tracks"])) - len(state["removed_track_ids"])),
+                        json.dumps(result, ensure_ascii=False),
+                        scan_id,
+                    ),
+                )
+                updated_scan = _scan_view(result, row["id"], row["created_at"])
+
+        cursor = db.execute(
+            """INSERT INTO actions(created_at, action, payload_json, backup_playlist_id, related_action_id)
+               VALUES (?, 'undo', ?, NULL, ?)""",
+            (
+                utc_now(),
+                json.dumps({"tracks": tracks, "scan_id": scan_id}, ensure_ascii=False),
+                action_id,
+            ),
+        )
+        return int(cursor.lastrowid), updated_scan
 
 
 def invalidate_scan(scan_id: int) -> None:
@@ -270,28 +412,6 @@ def invalidate_scan(scan_id: int) -> None:
             "INSERT OR IGNORE INTO invalidated_scans(scan_id, invalidated_at) VALUES (?, ?)",
             (scan_id, utc_now()),
         )
-
-
-def store_action(
-    action: str,
-    payload: dict[str, Any],
-    *,
-    backup_playlist_id: str | None = None,
-    related_action_id: int | None = None,
-) -> int:
-    with database() as db:
-        cursor = db.execute(
-            """INSERT INTO actions(created_at, action, payload_json, backup_playlist_id, related_action_id)
-               VALUES (?, ?, ?, ?, ?)""",
-            (
-                utc_now(),
-                action,
-                json.dumps(payload, ensure_ascii=False),
-                backup_playlist_id,
-                related_action_id,
-            ),
-        )
-        return int(cursor.lastrowid)
 
 
 def get_action(action_id: int) -> dict[str, Any] | None:
@@ -482,86 +602,95 @@ class DedupeHandler(BaseHTTPRequestHandler):
         self.send_json(SCAN_JOB.cancel(), HTTPStatus.ACCEPTED)
 
     def api_remove(self) -> None:
-        payload = self.body_json()
-        scan_id = int(payload.get("scan_id") or 0)
-        selected_ids = list(dict.fromkeys(str(item) for item in payload.get("track_ids") or []))
-        keeper_choices = payload.get("keepers") or {}
-        create_backup = payload.get("create_backup", True)
-        if not selected_ids:
-            raise ValueError("Selecciona al menos una canción para retirar.")
-        if not isinstance(keeper_choices, dict):
-            raise ValueError("La selección de copias a conservar no es válida.")
-        if not isinstance(create_backup, bool):
-            raise ValueError("La opción de respaldo no es válida.")
-        scan = get_scan(scan_id)
-        if not scan:
-            raise ValueError("La auditoría ya no está disponible. Ejecuta una nueva.")
+        with SCAN_MUTATION_LOCK:
+            payload = self.body_json()
+            scan_id = int(payload.get("scan_id") or 0)
+            selected_ids = list(dict.fromkeys(str(item) for item in payload.get("track_ids") or []))
+            keeper_choices = payload.get("keepers") or {}
+            create_backup = payload.get("create_backup", True)
+            if not selected_ids:
+                raise ValueError("Selecciona al menos una canción para retirar.")
+            if not isinstance(keeper_choices, dict):
+                raise ValueError("La selección de copias a conservar no es válida.")
+            if not isinstance(create_backup, bool):
+                raise ValueError("La opción de respaldo no es válida.")
+            scan = get_scan(scan_id)
+            if not scan:
+                raise ValueError("La auditoría ya no está disponible. Ejecuta una nueva.")
 
-        allowed: dict[str, dict[str, Any]] = {}
-        keepers: set[str] = set()
-        for group in scan["groups"]:
-            group_tracks = [group["keeper"], *group["remove"]]
-            group_track_ids = {track["id"] for track in group_tracks}
-            keeper_id = str(keeper_choices.get(group["id"]) or group["keeper"]["id"])
-            if keeper_id not in group_track_ids:
-                raise ValueError("Una de las copias elegidas para conservar no pertenece a su grupo.")
-            keepers.add(keeper_id)
-            for track in group_tracks:
-                if track["id"] != keeper_id:
-                    allowed[track["id"]] = {
-                        **track,
-                        "group_id": group["id"],
-                        "kind": group["kind"],
-                    }
-        if any(track_id not in allowed or track_id in keepers for track_id in selected_ids):
-            raise ValueError("La selección contiene una canción que no puede retirarse.")
+            allowed: dict[str, dict[str, Any]] = {}
+            keepers: set[str] = set()
+            for group in scan["groups"]:
+                group_tracks = [group["keeper"], *group["remove"]]
+                group_track_ids = {track["id"] for track in group_tracks}
+                keeper_id = str(keeper_choices.get(group["id"]) or group["keeper"]["id"])
+                if keeper_id not in group_track_ids:
+                    raise ValueError("Una de las copias elegidas para conservar no pertenece a su grupo.")
+                keepers.add(keeper_id)
+                for track in group_tracks:
+                    if track["id"] != keeper_id:
+                        allowed[track["id"]] = {
+                            **track,
+                            "group_id": group["id"],
+                            "kind": group["kind"],
+                        }
+            if any(track_id not in allowed or track_id in keepers for track_id in selected_ids):
+                raise ValueError("La selección contiene una canción que no puede retirarse.")
 
-        tracks = [allowed[track_id] for track_id in selected_ids]
-        uris = [track["uri"] for track in tracks]
-        stamp = datetime.now().strftime("%Y-%m-%d %H.%M")
-        client = spotify_client()
-        backup = (
-            client.create_backup_playlist(f"Dedupe Guard · Respaldo {stamp}", uris)
-            if create_backup
-            else None
-        )
-        client.remove_library_items(uris)
-        action_id = store_action(
-            "remove",
-            {
+            tracks = [allowed[track_id] for track_id in selected_ids]
+            uris = [track["uri"] for track in tracks]
+            stamp = datetime.now().strftime("%Y-%m-%d %H.%M")
+            client = spotify_client()
+            backup = (
+                client.create_backup_playlist(f"Dedupe Guard · Respaldo {stamp}", uris)
+                if create_backup
+                else None
+            )
+            client.remove_library_items(uris)
+            action_payload = {
                 "scan_id": scan_id,
                 "tracks": tracks,
                 "keepers": keeper_choices,
                 "created_backup": create_backup,
-            },
-            backup_playlist_id=(backup or {}).get("id"),
-        )
-        invalidate_scan(scan_id)
-        self.send_json(
-            {
-                "ok": True,
-                "action_id": action_id,
-                "removed": len(tracks),
-                "created_backup": create_backup,
-                "backup_playlist": (backup or {}).get("external_urls", {}).get("spotify"),
             }
-        )
+            action_id, updated_scan = record_remove_and_update_scan(
+                scan_id,
+                action_payload,
+                backup_playlist_id=(backup or {}).get("id"),
+            )
+            self.send_json(
+                {
+                    "ok": True,
+                    "action_id": action_id,
+                    "removed": len(tracks),
+                    "created_backup": create_backup,
+                    "backup_playlist": (backup or {}).get("external_urls", {}).get("spotify"),
+                    "scan": updated_scan,
+                }
+            )
 
     def api_undo(self) -> None:
-        action_id = int(self.body_json().get("action_id") or 0)
-        action = get_action(action_id)
-        if not action or action["action"] != "remove":
-            raise ValueError("No se encontró una limpieza que pueda deshacerse.")
-        with database() as db:
-            exists = db.execute(
-                "SELECT 1 FROM actions WHERE action = 'undo' AND related_action_id = ?", (action_id,)
-            ).fetchone()
-        if exists:
-            raise ValueError("Esta limpieza ya fue restaurada.")
-        tracks = action["payload"].get("tracks") or []
-        spotify_client().save_library_items([track["uri"] for track in tracks])
-        undo_id = store_action("undo", {"tracks": tracks}, related_action_id=action_id)
-        self.send_json({"ok": True, "action_id": undo_id, "restored": len(tracks)})
+        with SCAN_MUTATION_LOCK:
+            action_id = int(self.body_json().get("action_id") or 0)
+            action = get_action(action_id)
+            if not action or action["action"] != "remove":
+                raise ValueError("No se encontró una limpieza que pueda deshacerse.")
+            with database() as db:
+                exists = db.execute(
+                    "SELECT 1 FROM actions WHERE action = 'undo' AND related_action_id = ?", (action_id,)
+                ).fetchone()
+            if exists:
+                raise ValueError("Esta limpieza ya fue restaurada.")
+            tracks = action["payload"].get("tracks") or []
+            spotify_client().save_library_items([track["uri"] for track in tracks])
+            scan_id = action["payload"].get("scan_id")
+            undo_id, updated_scan = record_undo_and_update_scan(action_id, scan_id, tracks)
+            self.send_json({
+                "ok": True,
+                "action_id": undo_id,
+                "restored": len(tracks),
+                "scan": updated_scan,
+            })
 
     def serve_static(self, path: str) -> None:
         relative = "index.html" if path in ("", "/") else path.lstrip("/")

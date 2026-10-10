@@ -46,7 +46,8 @@ Los permisos solicitados son:
    - **Versiones**: hay diferencias de edición o duración.
 3. De forma predeterminada solo quedan seleccionadas las copias seguras. Los controles **Seguros**, **Probables** y **Versiones** activan o desactivan todas las copias de cada categoría; también puedes cambiar cuál conservar en cada grupo.
 4. Pulsa **Retirar duplicados** y confirma. Decide si quieres crear la playlist de respaldo antes de modificar Tus me gusta.
-5. Usa **Deshacer** en el historial si quieres restaurarlos.
+5. Después de cada limpieza, los resultados muestran los duplicados que siguen pendientes y quedan desmarcados.
+6. Usa **Deshacer** en el historial si quieres restaurar las canciones; si la auditoría correspondiente sigue abierta, también reaparecerán en sus resultados.
 
 ## Qué significa ISRC
 
