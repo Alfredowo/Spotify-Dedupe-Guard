@@ -58,6 +58,39 @@ class ServerSmokeTests(unittest.TestCase):
         finally:
             token_path.unlink(missing_ok=True)
 
+    def test_profile_refresh_starts_in_background_for_authenticated_user(self):
+        token_path = Path(self.temp_dir.name) / "spotify_token.bin"
+        token_path.write_bytes(b"local-token-marker")
+        request = urllib.request.Request(
+            self.base + "/api/profile/refresh",
+            data=b"{}",
+            method="POST",
+        )
+        try:
+            with (
+                patch("app.load_config", return_value={"client_id": "test-client"}),
+                patch("app.PROFILE_CACHE.get", return_value=None),
+                patch("app.PROFILE_CACHE.refresh_async") as refresh_profile,
+                patch("app.PROFILE_CACHE.is_refreshing", return_value=True),
+            ):
+                with urllib.request.urlopen(request, timeout=3) as response:
+                    payload = json.load(response)
+            self.assertTrue(payload["profile_refreshing"])
+            refresh_profile.assert_called_once()
+        finally:
+            token_path.unlink(missing_ok=True)
+
+    def test_profile_refresh_requires_authenticated_session(self):
+        request = urllib.request.Request(
+            self.base + "/api/profile/refresh",
+            data=b"{}",
+            method="POST",
+        )
+        with patch("app.load_config", return_value={"client_id": "test-client"}):
+            with self.assertRaises(urllib.error.HTTPError) as error:
+                urllib.request.urlopen(request, timeout=3)
+        self.assertEqual(error.exception.code, 401)
+
 
 if __name__ == "__main__":
     unittest.main()

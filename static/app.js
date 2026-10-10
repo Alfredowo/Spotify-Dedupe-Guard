@@ -185,6 +185,9 @@ async function boot() {
     renderStatus();
     if (state.status.authenticated) {
       if (state.status.profile_refreshing) void waitForProfileRefresh();
+      else if (!state.status.profile?.display_name || state.status.profile.display_name === "Spotify") {
+        void refreshMissingProfile();
+      }
       await Promise.all([loadLatestScan(), loadHistory()]);
       void resumeScan();
     }
@@ -216,10 +219,11 @@ function renderStatus() {
   accountControls.hidden = false;
   const profile = state.status.profile || {};
   const pill = $("#account-pill");
+  const displayName = profile.display_name || "Spotify";
   const image = profile.images?.[0]?.url;
   pill.innerHTML = image
-    ? `<img src="${escapeHtml(image)}" alt=""><span class="account-name">${escapeHtml(profile.display_name)}</span>`
-    : `<span class="account-fallback">${escapeHtml((profile.display_name || "S")[0])}</span><span class="account-name">${escapeHtml(profile.display_name || "Spotify")}</span>`;
+    ? `<img src="${escapeHtml(image)}" alt=""><span class="account-name">${escapeHtml(displayName)}</span>`
+    : `<span class="account-fallback">${escapeHtml(displayName[0])}</span><span class="account-name">${escapeHtml(displayName)}</span>`;
   renderRateLimit();
 }
 
@@ -257,6 +261,15 @@ async function waitForProfileRefresh() {
       renderStatus();
       return;
     }
+  }
+}
+
+async function refreshMissingProfile() {
+  try {
+    await api("/api/profile/refresh", {method: "POST", body: "{}"});
+    await waitForProfileRefresh();
+  } catch (error) {
+    toast(error.message, true);
   }
 }
 

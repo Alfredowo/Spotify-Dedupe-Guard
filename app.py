@@ -185,7 +185,7 @@ class ProfileCache:
         try:
             raw_profile = spotify_client().profile()
             profile = {
-                "display_name": raw_profile.get("display_name") or "Spotify",
+                "display_name": raw_profile.get("display_name"),
                 "id": raw_profile.get("id"),
                 "images": raw_profile.get("images") or [],
             }
@@ -505,6 +505,8 @@ class DedupeHandler(BaseHTTPRequestHandler):
             parsed = urllib.parse.urlparse(self.path)
             if parsed.path == "/api/config":
                 self.api_config()
+            elif parsed.path == "/api/profile/refresh":
+                self.api_profile_refresh()
             elif parsed.path == "/api/disconnect":
                 self.require_intent()
                 TokenStore(TOKEN_PATH).clear()
@@ -547,6 +549,17 @@ class DedupeHandler(BaseHTTPRequestHandler):
                 "redirect_uri": REDIRECT_URI,
             }
         )
+
+    def api_profile_refresh(self) -> None:
+        config = load_config()
+        if not config.get("client_id") or not TOKEN_PATH.exists():
+            raise SpotifyError("Conecta tu cuenta de Spotify primero.", 401)
+
+        profile = PROFILE_CACHE.get()
+        display_name = str((profile or {}).get("display_name") or "").strip()
+        if not display_name or display_name == "Spotify":
+            PROFILE_CACHE.refresh_async()
+        self.send_json({"profile_refreshing": PROFILE_CACHE.is_refreshing()})
 
     def api_config(self) -> None:
         client_id = str(self.body_json().get("client_id") or "").strip()
