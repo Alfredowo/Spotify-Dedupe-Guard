@@ -25,6 +25,10 @@ VERSION_PATTERNS: tuple[tuple[str, str], ...] = (
     ("karaoke", r"\bkaraoke\b"),
     ("cover", r"\bcover\b"),
 )
+REMIX_CREDIT_SUFFIX = re.compile(
+    r"\s*(?:[-–—:]\s*|\(\s*)[^()\-–—:]+\s+(?:remix|mix)\s*\)?\s*$",
+    re.IGNORECASE,
+)
 
 COMPILATION_WORDS = re.compile(
     r"\b(greatest hits|best of|the best|collection|anthology|essentials|"
@@ -47,7 +51,7 @@ def version_tags(title: str) -> tuple[str, ...]:
 
 
 def title_family(title: str) -> str:
-    value = normalize(title)
+    value = normalize(REMIX_CREDIT_SUFFIX.sub("", title or ""))
     value = re.sub(r"\b(feat|featuring|ft)\b.*$", "", value).strip()
     for _, pattern in VERSION_PATTERNS:
         value = re.sub(pattern, " ", value)

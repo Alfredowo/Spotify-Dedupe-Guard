@@ -8,6 +8,7 @@ def saved(
     *,
     title="American Woman",
     artist="Lenny Kravitz",
+    artists=None,
     album="5",
     album_type="album",
     duration=265_000,
@@ -20,7 +21,7 @@ def saved(
             "id": track_id,
             "uri": f"spotify:track:{track_id}",
             "name": title,
-            "artists": [{"name": artist}],
+            "artists": [{"name": name} for name in (artists or [artist])],
             "album": {
                 "name": album,
                 "album_type": album_type,
@@ -40,6 +41,9 @@ class NormalizationTests(unittest.TestCase):
 
     def test_title_family_removes_version(self):
         self.assertEqual(title_family("Take It Easy - 2013 Remaster"), "take it easy")
+
+    def test_title_family_removes_remixer_credit(self):
+        self.assertEqual(title_family("Clearest Blue - Gryffin Remix"), "clearest blue")
 
     def test_version_tags(self):
         self.assertEqual(version_tags("Song - Live Acoustic Version"), ("live", "acoustic"))
@@ -158,6 +162,32 @@ class DetectorTests(unittest.TestCase):
         self.assertEqual(result["summary"]["version"], 1)
         self.assertEqual(result["summary"]["removable_safe"], 0)
         self.assertEqual(result["summary"]["removable_version"], 1)
+
+    def test_remix_with_remixer_credit_is_grouped_as_version(self):
+        items = [
+            saved(
+                "original",
+                title="Clearest Blue",
+                artist="CHVRCHES",
+                artists=["CHVRCHES"],
+                album="Every Open Eye (Special Edition)",
+                isrc="A",
+                duration=234_000,
+            ),
+            saved(
+                "remix",
+                title="Clearest Blue - Gryffin Remix",
+                artist="CHVRCHES",
+                artists=["CHVRCHES", "Gryffin"],
+                album="Every Open Eye (Extended Edition)",
+                isrc="B",
+                duration=259_000,
+            ),
+        ]
+        result = detect_duplicates(items)
+        self.assertEqual(result["summary"]["version"], 1)
+        self.assertEqual(result["groups"][0]["kind"], "version")
+        self.assertEqual(result["summary"]["removable_safe"], 0)
 
     def test_different_artists_are_not_grouped(self):
         items = [saved("one", artist="Lenny Kravitz"), saved("two", artist="Cover Band")]
