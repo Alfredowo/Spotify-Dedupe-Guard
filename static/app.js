@@ -479,10 +479,33 @@ function renderHistory() {
   }
   section.hidden = false;
   $("#history").innerHTML = state.history.map(item => `
-    <div class="history-row">
-      <div><b>${item.action === "remove" ? "Duplicados retirados" : "Limpieza restaurada"}</b><small>${formatDateTime(item.created_at)}</small></div>
-      <span class="history-count">${item.count} canciones</span>
-      ${item.can_undo ? `<button class="text-button undo-button" data-action-id="${item.id}" data-action-count="${item.count}" type="button">Deshacer</button>` : "<span></span>"}
+    <div class="history-entry">
+      <div class="history-row">
+        <div class="history-main">
+          <b>${item.action === "remove" ? "Duplicados retirados" : "Limpieza restaurada"}</b>
+          <small>${formatDateTime(item.created_at)}</small>
+        </div>
+        <div class="history-actions">
+          <span class="history-count">${item.count} canciones</span>
+          ${item.can_undo ? `<button class="text-button undo-button" data-action-id="${item.id}" data-action-count="${item.count}" type="button">Deshacer</button>` : ""}
+        </div>
+      </div>
+      ${item.tracks?.length ? `
+        <details class="history-details">
+          <summary>
+            <svg class="history-chevron" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+              <path d="m6 3.5 4.5 4.5L6 12.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
+            </svg>
+            <span>Ver canciones ${item.action === "remove" ? "retiradas" : "restauradas"}</span>
+          </summary>
+          <ul class="history-tracks">
+            ${item.tracks.map(track => `
+              <li>
+                <span>${escapeHtml(track.name || "Canción sin título")}</span>
+                <small>${escapeHtml((track.artists || []).join(", ") || "Artista desconocido")}</small>
+              </li>`).join("")}
+          </ul>
+        </details>` : ""}
     </div>`).join("");
   $$(".undo-button").forEach(button => button.addEventListener("click", () => openUndoDialog(button)));
 }

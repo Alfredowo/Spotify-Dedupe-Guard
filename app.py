@@ -433,17 +433,24 @@ def action_history() -> list[dict[str, Any]]:
     with database() as db:
         rows = db.execute("SELECT * FROM actions ORDER BY id DESC LIMIT 50").fetchall()
     undone = {row["related_action_id"] for row in rows if row["action"] == "undo"}
-    return [
-        {
-            "id": row["id"],
-            "created_at": row["created_at"],
-            "action": row["action"],
-            "count": len(json.loads(row["payload_json"]).get("tracks", [])),
-            "backup_playlist_id": row["backup_playlist_id"],
-            "can_undo": row["action"] == "remove" and row["id"] not in undone,
-        }
-        for row in rows
-    ]
+    history = []
+    for row in rows:
+        tracks = json.loads(row["payload_json"]).get("tracks", [])
+        history.append(
+            {
+                "id": row["id"],
+                "created_at": row["created_at"],
+                "action": row["action"],
+                "count": len(tracks),
+                "tracks": [
+                    {"name": track.get("name", ""), "artists": track.get("artists", [])}
+                    for track in tracks
+                ],
+                "backup_playlist_id": row["backup_playlist_id"],
+                "can_undo": row["action"] == "remove" and row["id"] not in undone,
+            }
+        )
+    return history
 
 
 class DedupeHandler(BaseHTTPRequestHandler):
