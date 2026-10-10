@@ -45,7 +45,7 @@ function clientOptions(overrides = {}) {
     sessionStorage: new MemorySessionStorage(),
     cryptoImpl: webcrypto,
     fetchImpl: async () => new Response("{}", {status: 200}),
-    location: {origin: "https://dedupe.example", pathname: "/browser", search: "", assign() {}},
+    location: {origin: "https://dedupe.example", pathname: "/", search: "", assign() {}},
     history: {replaceState() {}},
     now: () => 1_800_000_000_000,
     ...overrides,
@@ -69,7 +69,7 @@ function savedTrack(id, isrc) {
   };
 }
 
-test("stores the Client ID in browser storage and uses the /browser redirect URI", async () => {
+test("stores the Client ID in browser storage and uses the root redirect URI", async () => {
   const store = new MemoryStore();
   const client = createBrowserClient(clientOptions({store}));
 
@@ -79,7 +79,7 @@ test("stores the Client ID in browser storage and uses the /browser redirect URI
   });
 
   assert.equal(result.ok, true);
-  assert.equal(result.redirect_uri, "https://dedupe.example/browser");
+  assert.equal(result.redirect_uri, "https://dedupe.example/");
   assert.equal(await store.get(BROWSER_STORAGE_KEYS.clientId), clientId);
 });
 
@@ -93,7 +93,7 @@ test("starts PKCE authorization without a client secret", async () => {
     sessionStorage,
     location: {
       origin: "https://dedupe.example",
-      pathname: "/browser",
+      pathname: "/",
       search: "",
       assign(url) { assignedUrl = url; },
     },
@@ -105,7 +105,7 @@ test("starts PKCE authorization without a client secret", async () => {
   assert.equal(authUrl.origin, "https://accounts.spotify.com");
   assert.equal(authUrl.pathname, "/authorize");
   assert.equal(authUrl.searchParams.get("client_id"), clientId);
-  assert.equal(authUrl.searchParams.get("redirect_uri"), "https://dedupe.example/browser");
+  assert.equal(authUrl.searchParams.get("redirect_uri"), "https://dedupe.example/");
   assert.equal(authUrl.searchParams.get("response_type"), "code");
   assert.equal(authUrl.searchParams.get("code_challenge_method"), "S256");
   assert.ok(authUrl.searchParams.get("code_challenge"));
@@ -127,7 +127,7 @@ test("rejects an OAuth callback whose state does not match", async () => {
   const client = createBrowserClient(clientOptions({
     store,
     sessionStorage,
-    location: {origin: "https://dedupe.example", pathname: "/browser", search: "?code=code&state=wrong", assign() {}},
+    location: {origin: "https://dedupe.example", pathname: "/", search: "?code=code&state=wrong", assign() {}},
     fetchImpl: async () => { fetchCount += 1; return new Response("{}", {status: 200}); },
   }));
 
@@ -150,7 +150,7 @@ test("exchanges a valid PKCE callback and stores the token and Spotify profile l
   const client = createBrowserClient(clientOptions({
     store,
     sessionStorage,
-    location: {origin: "https://dedupe.example", pathname: "/browser", search: "?code=auth-code&state=valid-state", assign() {}},
+    location: {origin: "https://dedupe.example", pathname: "/", search: "?code=auth-code&state=valid-state", assign() {}},
     history: {replaceState(...args) { historyCalls.push(args); }},
     fetchImpl: async (url, options = {}) => {
       requests.push({url: String(url), options});
@@ -170,6 +170,7 @@ test("exchanges a valid PKCE callback and stores the token and Spotify profile l
   assert.deepEqual(await store.get(BROWSER_STORAGE_KEYS.profile), profile);
   assert.equal(sessionStorage.getItem("spotify-dedupe-oauth"), null);
   assert.equal(historyCalls.length, 1);
+  assert.deepEqual(historyCalls[0], [null, "", "/"]);
   assert.equal(requests.length, 2);
   assert.match(requests[0].options.body.toString(), /code_verifier=pkce-verifier/);
   assert.doesNotMatch(requests[0].options.body.toString(), /client_secret/);

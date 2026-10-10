@@ -11,15 +11,8 @@ class VercelHostingTests(unittest.TestCase):
         config = json.loads((ROOT / "vercel.json").read_text(encoding="utf-8"))
 
         self.assertEqual(config["outputDirectory"], "static")
-        self.assertEqual(config["redirects"], [{
-            "source": "/",
-            "destination": "/browser",
-            "permanent": False,
-        }])
-        self.assertEqual(config["rewrites"], [{
-            "source": "/browser",
-            "destination": "/index.html",
-        }])
+        self.assertNotIn("redirects", config)
+        self.assertNotIn("rewrites", config)
         self.assertNotIn("functions", config)
         self.assertFalse((ROOT / "requirements.txt").exists())
         self.assertFalse((ROOT / "api" / "index.py").exists())

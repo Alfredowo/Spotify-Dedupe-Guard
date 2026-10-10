@@ -137,7 +137,7 @@ export function createBrowserClient({
     throw new Error("El navegador no ofrece las funciones criptográficas necesarias para Spotify PKCE.");
   }
 
-  const redirectUri = `${location.origin}/browser`;
+  const redirectUri = `${location.origin}/`;
   let refreshPromise = null;
   let profilePromise = null;
 
@@ -305,7 +305,7 @@ export function createBrowserClient({
     const state = params.get("state");
     const oauthError = params.get("error");
     if (!code && !state && !oauthError) return false;
-    history.replaceState(null, "", location.pathname || "/browser");
+    history.replaceState(null, "", location.pathname || "/");
 
     let pending;
     try {

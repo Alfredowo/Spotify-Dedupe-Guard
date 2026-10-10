@@ -1,19 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "outputDirectory": "static",
-  "redirects": [
-    {
-      "source": "/",
-      "destination": "/browser",
-      "permanent": false
-    }
-  ],
-  "rewrites": [
-    {
-      "source": "/browser",
-      "destination": "/index.html"
-    }
-  ],
   "headers": [
     {
       "source": "/(.*)",

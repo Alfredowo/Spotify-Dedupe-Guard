@@ -732,18 +732,9 @@ class DedupeHandler(BaseHTTPRequestHandler):
 
 
 def main(open_browser: bool = True) -> None:
-    DATA.mkdir(parents=True, exist_ok=True)
-    server = ThreadingHTTPServer((HOST, PORT), DedupeHandler)
-    url = f"http://{HOST}:{PORT}"
-    print(f"Spotify Dedupe Guard disponible en {url}")
-    if open_browser:
-        threading.Timer(0.8, lambda: webbrowser.open(url)).start()
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        print("\nServidor detenido.")
-    finally:
-        server.server_close()
+    from static_server import main as serve_static_app
+
+    serve_static_app(open_browser=open_browser)
 
 
 if __name__ == "__main__":

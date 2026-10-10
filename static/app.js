@@ -16,7 +16,7 @@ let toastDeadline = 0;
 let toastRemainingMs = 0;
 let toastPaused = false;
 const TOAST_DURATION_MS = 4200;
-const BROWSER_MODE = window.location.pathname.replace(/\/$/, "") === "/browser";
+const BROWSER_MODE = true;
 let browserClientPromise = null;
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -224,7 +224,7 @@ async function boot() {
         configured: false,
         authenticated: false,
         private_deployment: false,
-        redirect_uri: `${window.location.origin}/browser`,
+        redirect_uri: `${window.location.origin}/`,
         rate_limit: {active: false, retry_after: 0},
       };
       renderStatus();
