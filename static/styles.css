@@ -96,6 +96,7 @@ a { color: var(--cyan); }
 .brand-mark i:nth-child(3) { height: 24px; }
 
 .account-controls { display: flex; align-items: center; gap: 10px; }
+.account-controls form { margin: 0; }
 
 .account-pill {
   padding: 7px 12px 7px 8px;

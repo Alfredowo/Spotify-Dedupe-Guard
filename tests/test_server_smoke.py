@@ -45,6 +45,7 @@ class ServerSmokeTests(unittest.TestCase):
         token_path.write_bytes(b"local-token-marker")
         try:
             with (
+                patch("app.load_config", return_value={"client_id": "test-client"}),
                 patch("app.PROFILE_CACHE.get", return_value=None),
                 patch("app.PROFILE_PATH", Path(self.temp_dir.name) / "missing-profile.json"),
                 patch("app.PROFILE_CACHE.refresh_async") as refresh_profile,

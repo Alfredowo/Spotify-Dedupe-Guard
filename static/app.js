@@ -16,9 +16,26 @@ let toastDeadline = 0;
 let toastRemainingMs = 0;
 let toastPaused = false;
 const TOAST_DURATION_MS = 4200;
+const BROWSER_MODE = window.location.pathname.replace(/\/$/, "") === "/browser";
+let browserClientPromise = null;
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+
+function getBrowserClient() {
+  if (!browserClientPromise) {
+    browserClientPromise = Promise.all([
+      import("/browser-client.mjs"),
+    ]).then(async ([browserModule]) => {
+      const store = await browserModule.openBrowserStore();
+      return browserModule.createBrowserClient({store});
+    }).catch(error => {
+      browserClientPromise = null;
+      throw error;
+    });
+  }
+  return browserClientPromise;
+}
 
 $("#toast").addEventListener("mouseenter", pauseToast);
 $("#toast").addEventListener("mouseleave", resumeToast);
@@ -36,6 +53,7 @@ function normalizeSearch(value = "") {
 }
 
 async function api(path, options = {}) {
+  if (BROWSER_MODE) return (await getBrowserClient()).api(path, options);
   const response = await fetch(path, {
     ...options,
     headers: {"Content-Type": "application/json", ...(options.headers || {})},
@@ -181,8 +199,17 @@ function formatDateTime(value) {
 
 async function boot() {
   try {
+    let oauthConnected = false;
+    if (BROWSER_MODE) {
+      try {
+        oauthConnected = await (await getBrowserClient()).completeOAuthCallback();
+      } catch (error) {
+        toast(error.message, true);
+      }
+    }
     state.status = await api("/api/status");
     renderStatus();
+    if (oauthConnected) toast("Spotify conectado. Tus datos se guardan en este navegador.");
     if (state.status.authenticated) {
       if (state.status.profile_refreshing) void waitForProfileRefresh();
       else if (!state.status.profile?.display_name || state.status.profile.display_name === "Spotify") {
@@ -192,6 +219,16 @@ async function boot() {
       void resumeScan();
     }
   } catch (error) {
+    if (BROWSER_MODE && !state.status) {
+      state.status = {
+        configured: false,
+        authenticated: false,
+        private_deployment: false,
+        redirect_uri: `${window.location.origin}/browser`,
+        rate_limit: {active: false, retry_after: 0},
+      };
+      renderStatus();
+    }
     toast(error.message, true);
   }
 }
@@ -202,12 +239,17 @@ function renderStatus() {
   const configStep = $("#config-step");
   const authStep = $("#auth-step");
   const accountControls = $("#account-controls");
-  $("#redirect-uri").textContent = state.status.redirect_uri;
+  $("#redirect-uri").textContent = state.status.redirect_uri || "";
+  $("#connect-spotify").href = BROWSER_MODE ? "#" : "/auth/login";
+  $("#browser-storage-note").hidden = !BROWSER_MODE;
 
   if (!state.status.authenticated) {
     setup.hidden = false;
     dashboard.hidden = true;
-    accountControls.hidden = true;
+    accountControls.hidden = !state.status.private_deployment;
+    $("#account-pill").hidden = true;
+    $("#disconnect-button").hidden = true;
+    $("#app-logout-form").hidden = !state.status.private_deployment;
     configStep.hidden = state.status.configured;
     authStep.hidden = !state.status.configured;
     renderRateLimit({active: false, retry_after: 0});
@@ -217,6 +259,9 @@ function renderStatus() {
   setup.hidden = true;
   dashboard.hidden = false;
   accountControls.hidden = false;
+  $("#account-pill").hidden = false;
+  $("#disconnect-button").hidden = false;
+  $("#app-logout-form").hidden = !state.status.private_deployment;
   const profile = state.status.profile || {};
   const pill = $("#account-pill");
   const displayName = profile.display_name || "Spotify";
@@ -243,12 +288,12 @@ async function disconnectSpotify() {
     state.history = [];
     state.status = await api("/api/status");
     renderStatus();
-    toast("Sesión cerrada. Ya puedes conectar otra cuenta.");
+    toast("Spotify desconectado. Ya puedes conectar otra cuenta.");
   } catch (error) {
     toast(error.message, true);
   } finally {
     button.disabled = false;
-    button.textContent = "Cerrar sesión";
+    button.textContent = "Desconectar Spotify";
   }
 }
 
@@ -698,14 +743,31 @@ $("#config-form").addEventListener("submit", async event => {
   }
 });
 
+$("#connect-spotify").addEventListener("click", event => {
+  if (!BROWSER_MODE) return;
+  event.preventDefault();
+  void getBrowserClient()
+    .then(client => client.beginLogin())
+    .catch(error => toast(error.message, true));
+});
+
 $("#copy-redirect").addEventListener("click", async () => {
   await navigator.clipboard.writeText($("#redirect-uri").textContent);
   toast("Redirect URI copiada.");
 });
 
 $("#change-client").addEventListener("click", () => {
-  state.status.configured = false;
-  renderStatus();
+  if (!BROWSER_MODE) {
+    state.status.configured = false;
+    renderStatus();
+    return;
+  }
+  void api("/api/config", {method: "POST", body: JSON.stringify({client_id: ""})})
+    .then(async () => {
+      state.status = await api("/api/status");
+      renderStatus();
+    })
+    .catch(error => toast(error.message, true));
 });
 
 $("#scan-button").addEventListener("click", () => {

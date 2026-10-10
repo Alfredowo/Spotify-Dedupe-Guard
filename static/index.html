@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
   <title>Spotify Dedupe Guard</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
@@ -16,7 +17,10 @@
     </a>
     <div id="account-controls" class="account-controls" hidden>
       <div id="account-pill" class="account-pill"></div>
-      <button id="disconnect-button" class="account-signout" type="button">Cerrar sesión</button>
+      <button id="disconnect-button" class="account-signout" type="button">Desconectar Spotify</button>
+      <form id="app-logout-form" method="post" action="/auth/logout" hidden>
+        <button class="account-signout" type="submit">Salir de la app</button>
+      </form>
     </div>
   </header>
 
@@ -46,13 +50,14 @@
             </div>
           </form>
           <p class="microcopy">No se solicita ni almacena un Client Secret.</p>
+          <p id="browser-storage-note" class="microcopy" hidden>En Vercel, el Client ID, el token, los análisis y el historial se guardan en este navegador. Cualquier persona que use este mismo perfil del navegador podría verlos.</p>
         </div>
 
         <div id="auth-step" hidden>
           <span class="step-label">Autorización · 02</span>
           <h2>Autoriza tu biblioteca</h2>
           <p>Spotify mostrará los permisos para identificar tu perfil, leer y modificar “Tus me gusta” y crear la playlist de respaldo.</p>
-          <a class="button spotify" href="/auth/login"><span aria-hidden="true">●</span> Conectar con Spotify</a>
+          <a id="connect-spotify" class="button spotify" href="/auth/login"><span aria-hidden="true">●</span> Conectar con Spotify</a>
           <button id="change-client" class="text-button" type="button">Cambiar Client ID</button>
         </div>
       </div>

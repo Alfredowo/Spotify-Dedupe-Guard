@@ -11,7 +11,7 @@ Aplicación local para encontrar y retirar canciones repetidas de **Tus me gusta
 - Recomienda conservar la edición de álbum frente a recopilaciones como `Greatest Hits`, pero permite elegir cualquier copia del grupo.
 - Ofrece crear una playlist privada de respaldo antes de retirar canciones; está activada de forma predeterminada, pero puede omitirse con advertencia explícita.
 - Guarda un historial local y permite deshacer una limpieza.
-- Cifra el token de Spotify con Windows DPAPI; no solicita un Client Secret.
+- En ejecución local cifra el token con Windows DPAPI; la versión de Vercel lo guarda en IndexedDB del navegador. Ninguna versión solicita un Client Secret.
 
 ## Configuración inicial
 
@@ -26,6 +26,8 @@ Spotify exige que el propietario de una app nueva en modo de desarrollo tenga Pr
    ```
 
    Spotify no admite `localhost`; debe ser `127.0.0.1`.
+
+   Para Vercel, registra además la URL HTTPS de producción seguida de `/browser`; el navegador vuelve a esa ruta después de autorizar.
 
 4. Guarda la configuración y copia el **Client ID**.
 5. Ejecuta [run_spotify_dedupe.bat](run_spotify_dedupe.bat).
@@ -64,6 +66,7 @@ La aplicación queda disponible únicamente en `http://127.0.0.1:8765`.
 ## Pruebas
 
 ```powershell
+node --test tests/browser_client.test.mjs tests/dedupe_engine.test.mjs
 python -m unittest discover -s tests -v
 ```
 
@@ -76,3 +79,15 @@ La carpeta `data/` se crea automáticamente:
 - `dedupe.sqlite3`: auditorías e historial.
 
 Estos archivos están excluidos de Git.
+
+## Despliegue estático en Vercel
+
+La versión de Vercel es una aplicación estática: usa OAuth PKCE y llama a Spotify directamente desde el navegador. No requiere PostgreSQL, funciones de servidor ni variables de entorno. El Client ID, el token, la última auditoría y el historial quedan en IndexedDB de cada perfil de navegador.
+
+1. En Vercel, usa la raíz del repositorio como **Root Directory**. `vercel.json` publica `static/` y redirige la página inicial a `/browser`.
+2. En **Redirect URIs** de Spotify Developer Dashboard agrega el dominio HTTPS asignado al proyecto seguido exactamente de `/browser`; por ejemplo, `https://spotify-dedupe-guard.vercel.app/browser`.
+3. Vuelve a desplegar, abre el dominio del proyecto, pega el Client ID y conecta Spotify.
+
+La URL no tiene contraseña de acceso: cualquiera puede abrir la interfaz y autorizar su propia cuenta de Spotify. Los datos locales se separan por cuenta, pero solo existen en ese navegador. Si borras los datos del sitio o cambias de dispositivo, desaparecen el token, la auditoría y el historial. La playlist de respaldo se guarda en Spotify.
+
+En la ejecución local (`python app.py`) se mantienen SQLite y el cifrado de Windows DPAPI.
