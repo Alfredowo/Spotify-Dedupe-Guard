@@ -9,26 +9,55 @@ from typing import Any, Iterable
 
 
 VERSION_PATTERNS: tuple[tuple[str, str], ...] = (
-    ("live", r"\b(live|en vivo|concert|unplugged|session)\b"),
-    ("remaster", r"\b(remaster(?:ed|izado)?|anniversary)\b"),
-    ("remix", r"\b(remix|mix)\b"),
+    ("live", r"\b(live|en vivo|concert|unplugged)\b"),
+    ("remaster", r"\b(?:digitally )?remaster(?:ed|izado)?\b|\banniversary\b"),
+    ("single mix", r"\bsingle mix$"),
+    ("remix", r"\bremix\b|(?<!single )\bmix\b"),
     ("acoustic", r"\b(acoustic|acustic[ao])\b"),
     ("radio edit", r"\b(radio edit|radio version)\b"),
-    ("edit", r"\bedit\b"),
+    ("alternate edit", r"\balt edit$"),
+    ("edit", r"(?<!alt )(?<!radio )\bedit\b"),
     ("demo", r"\bdemo\b"),
     ("instrumental", r"\binstrumental\b"),
     ("mono", r"\bmono\b"),
     ("stereo", r"\bstereo\b"),
     ("re-recorded", r"\b(re-recorded|rerecorded|new recording)\b"),
-    ("sped up", r"\bsped up\b"),
-    ("slowed", r"\bslowed\b"),
+    ("session", r"\bsession\b"),
+    ("single version", r"\bsingle version$"),
+    ("maxi version", r"\bmaxi version$"),
+    ("alternate version", r"\b(?:alternate(?: reality)?|alternative|original) version$"),
+    ("person-specific version", r"\b[a-z0-9]+\s+s version$"),
+    ("extended", r"\bextended(?: version)?(?: (?:digitally )?remaster(?:ed|izado)?)?$"),
+    ("vip", r"\bvip$"),
+    ("sped up", r"\bsped up(?: version)?$"),
+    ("slowed and reverb", r"\bslowed reverb(?: version)?$"),
+    ("slowed", r"\bslowed(?: version)?$"),
+    ("nightcore", r"\bnightcore(?: version)?$"),
     ("karaoke", r"\bkaraoke\b"),
     ("cover", r"\bcover\b"),
 )
+CONTEXTUAL_VERSION_SUFFIXES = {
+    "live": re.compile(
+        r"\s*(?:[-–—:]\s*|\(\s*)(?:live|en\s+vivo|concert|unplugged)"
+        r"(?:\s+(?:acoustic|session|version))*\s*\)?$",
+        re.IGNORECASE,
+    ),
+    "session": re.compile(
+        r"\s*(?:[-–—:]\s*|\(\s*)(?:(?:live|acoustic|radio|studio)\s+)?"
+        r"session(?:\s+version)?\s*\)?$",
+        re.IGNORECASE,
+    ),
+    "stereo": re.compile(
+        r"\s*(?:[-–—:]\s*|\(\s*)stereo(?:\s+version)?\s*\)?$",
+        re.IGNORECASE,
+    ),
+}
+CONTEXTUAL_VERSION_TAGS = frozenset(CONTEXTUAL_VERSION_SUFFIXES)
 REMIX_CREDIT_SUFFIX = re.compile(
     r"\s*(?:[-–—:]\s*|\(\s*)[^()\-–—:]+\s+(?:remix|mix)\s*\)?\s*$",
     re.IGNORECASE,
 )
+COLLABORATOR_SUFFIX = re.compile(r"\s*\(\s*with\s+[^()]+\)\s*$", re.IGNORECASE)
 
 COMPILATION_WORDS = re.compile(
     r"\b(greatest hits|best of|the best|collection|anthology|essentials|"
@@ -47,14 +76,28 @@ def normalize(value: str) -> str:
 
 def version_tags(title: str) -> tuple[str, ...]:
     normalized = normalize(title)
-    return tuple(label for label, pattern in VERSION_PATTERNS if re.search(pattern, normalized))
+    return tuple(
+        label
+        for label, pattern in VERSION_PATTERNS
+        if (
+            CONTEXTUAL_VERSION_SUFFIXES[label].search(title or "")
+            if label in CONTEXTUAL_VERSION_TAGS
+            else re.search(pattern, normalized)
+        )
+    )
 
 
 def title_family(title: str) -> str:
-    value = normalize(REMIX_CREDIT_SUFFIX.sub("", title or ""))
+    title = COLLABORATOR_SUFFIX.sub("", title or "")
+    title = REMIX_CREDIT_SUFFIX.sub("", title)
+    for pattern in CONTEXTUAL_VERSION_SUFFIXES.values():
+        title = pattern.sub("", title)
+    value = normalize(title)
     value = re.sub(r"\b(feat|featuring|ft)\b.*$", "", value).strip()
-    for _, pattern in VERSION_PATTERNS:
-        value = re.sub(pattern, " ", value)
+    for label, pattern in VERSION_PATTERNS:
+        if label in CONTEXTUAL_VERSION_TAGS:
+            continue
+        value = re.sub(pattern, " ", value).strip()
     value = re.sub(r"\b(19|20)\d{2}\b", " ", value)
     return re.sub(r"\s+", " ", value).strip()
 
@@ -73,7 +116,14 @@ def _titles_have_generic_suffix(left: str, right: str) -> bool:
     shorter, longer = sorted((left_tokens, right_tokens), key=len)
     if len(shorter) < 3:
         return False
-    return longer[: len(shorter)] == shorter
+    if longer[: len(shorter)] != shorter:
+        return False
+    longer_title = left if len(left_tokens) > len(right_tokens) else right
+    suffix_tokens = longer[len(shorter) :]
+    for label in CONTEXTUAL_VERSION_TAGS:
+        if label in suffix_tokens and label not in version_tags(longer_title):
+            return False
+    return True
 
 
 def _parse_timestamp(value: str) -> float:

@@ -48,8 +48,89 @@ class NormalizationTests(unittest.TestCase):
     def test_version_tags(self):
         self.assertEqual(version_tags("Song - Live Acoustic Version"), ("live", "acoustic"))
 
+    def test_title_family_removes_specific_edition_suffixes(self):
+        self.assertEqual(title_family("The Craving - single version"), "the craving")
+        self.assertEqual(title_family("The Craving (Jenna's version)"), "the craving")
+        self.assertEqual(title_family("Algorithm (Alternate Reality Version)"), "algorithm")
+        self.assertEqual(title_family("Somebody Else - Alt Edit"), "somebody else")
+        self.assertEqual(title_family("Animals - Extended"), "animals")
+        self.assertEqual(title_family("White Flag VIP"), "white flag")
+        self.assertEqual(title_family("Little Me - Single Mix"), "little me")
+        self.assertEqual(title_family("Big Boys Don't Cry - Maxi Version"), "big boys don t cry")
+        self.assertEqual(title_family("Song - Original Version"), "song")
+        self.assertEqual(title_family("Song - Nightcore Version"), "song")
+        self.assertEqual(title_family("Song - Slowed + Reverb"), "song")
+        self.assertIn(
+            "extended",
+            version_tags("Build Me Up Buttercup - Extended Version (Remastered)"),
+        )
+
+    def test_ordinary_title_words_are_not_version_tags(self):
+        ordinary_titles = (
+            "I Just Wanna Live",
+            "Live While We're Young",
+            "You Only Live Once",
+            "Live Forever",
+            "How Am I Supposed to Live Without You",
+            "Therapy Session",
+            "I Sold My Bed, But Not My Stereo",
+        )
+        for title in ordinary_titles:
+            with self.subTest(title=title):
+                self.assertNotIn("live", version_tags(title))
+                self.assertNotIn("session", version_tags(title))
+                self.assertNotIn("stereo", version_tags(title))
+                self.assertEqual(title_family(title), normalize(title))
+
 
 class DetectorTests(unittest.TestCase):
+    def test_explicit_short_title_editions_are_detected_as_versions(self):
+        pairs = (
+            ("The Craving - single version", "The Craving (Jenna's version)"),
+            ("Lights - Single Version", "Lights - Sped Up Version"),
+            ("Somebody Else - Alt Edit", "Somebody Else"),
+            ("Algorithm (Alternate Reality Version)", "Algorithm"),
+            ("Live Is Life - Live", "Live Is Life (Digitally Remastered) - Single Version"),
+            ("Animals - Extended", "Animals"),
+            ("White Flag VIP", "White Flag"),
+            ("Little Me - Single Mix", "Little Me"),
+            (
+                "Build Me Up Buttercup - Extended Version (Remastered)",
+                "Build Me Up Buttercup - Mono",
+            ),
+        )
+        for index, (left_title, right_title) in enumerate(pairs):
+            with self.subTest(left=left_title, right=right_title):
+                result = detect_duplicates(
+                    [
+                        saved(
+                            f"left-{index}",
+                            title=left_title,
+                            artist="Shared Artist",
+                            isrc=f"A-{index}",
+                            duration=190_000,
+                        ),
+                        saved(
+                            f"right-{index}",
+                            title=right_title,
+                            artist="Shared Artist",
+                            isrc=f"B-{index}",
+                            duration=200_000,
+                        ),
+                    ]
+                )
+                self.assertEqual(result["summary"]["version"], 1)
+                self.assertEqual(result["summary"]["total_groups"], 1)
+
+    def test_literal_live_title_is_not_joined_to_a_shorter_song(self):
+        result = detect_duplicates(
+            [
+                saved("full", title="I Just Wanna Live", artist="Good Charlotte", isrc="A"),
+                saved("short", title="I Just Wanna", artist="Good Charlotte", isrc="B"),
+            ]
+        )
+        self.assertEqual(result["summary"]["total_groups"], 0)
+
     def test_same_isrc_allows_unlisted_title_suffix(self):
         items = [
             saved(
